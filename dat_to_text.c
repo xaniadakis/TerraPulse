@@ -267,7 +267,7 @@ int main() {
             // printf("\nDAT file size: %.2f MB, Samples: %d, Initial Frequency: %.2f Hz", file_size_mb, nr, initial_frequency);
             // printf("\nTime to read: %.4f seconds", reading_time);
             // printf("\nTime to calibrate: %.4f seconds", calibration_time);
-            printf("\nDownsampled data saved to %s\n", output_file);
+//            printf("%s\n", output_file);
 
             // Free allocated memory
             free(HNS);
@@ -282,7 +282,7 @@ int main() {
     // Measure total end time
     clock_t total_end = clock();
     double total_time = (double)(total_end - total_start) / CLOCKS_PER_SEC;
-    printf("\nTotal time for the whole process: %.4f seconds", total_time);
+//    printf("\nTotal time for the whole process: %.4f seconds", total_time);
 
     return 0;
 }
