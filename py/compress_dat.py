@@ -446,7 +446,7 @@ def read_plot_compressed_file(input_txt_file, freq):
 
 def delete_files():
     # Get the current directory
-    current_dir = "./generated"
+    current_dir = "../generated"
 
     # Loop through all files in the current directory
     for filename in os.listdir(current_dir):

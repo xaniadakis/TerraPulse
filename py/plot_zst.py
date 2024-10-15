@@ -18,7 +18,14 @@ if __name__ == "__main__":
             time_str = f"{hour:02}{minute:02}"
             files.append(f"{base_filename}{time_str}.zst")
 
-    n = int(input("How many files do you want to plot? "))
+    while True:
+        try:
+            n = int(input("How many files do you want to plot? "))
+            break  # Exit the loop if a valid integer is entered
+        except ValueError:
+            print("Invalid input! Please enter a valid integer.")
+    if n == 0:
+        exit(0)
 
     # Create a figure with subplots
     fig, axs = plt.subplots(1, n, figsize=(5 * n, 5))  # n subplots horizontally
