@@ -7,6 +7,8 @@ import zstandard as zstd
 import io
 from tqdm import tqdm  # Import tqdm for the progress bar
 
+NUM_HARMONICS = 7  # Define the number of harmonics expected
+
 def get_file_size(file_path):
     # Get the size of the file in bytes
     file_size_bytes = os.path.getsize(file_path)
@@ -26,10 +28,27 @@ def delete_file(file_path):
     except Exception as e:
         print(f"An error occurred while deleting the file: {e}")
 
+def read_signals(file_path):
+    with open(file_path, 'r') as file:
+        # Read time-domain features
+        hns_features = np.array([float(x) for x in file.readline().strip().split('\t')])
+        hew_features = np.array([float(x) for x in file.readline().strip().split('\t')])
+
+        # Read harmonics
+        harmonics = []
+        for _ in range(NUM_HARMONICS):
+            harmonics.append(np.array([float(x) for x in file.readline().strip().split('\t')]))
+
+        # Read HNS and HEW values
+        data = np.loadtxt(file, delimiter='\t', dtype=int)
+
+    return hns_features, hew_features, harmonics, data
+
 def transform_signal(input_filename, freq, fmin, fmax, do_plot=False):
     # Read from text file and plot
     # start_reading = time.time()
-    data = np.loadtxt(input_filename + ".txt", delimiter='\t')
+    # data = np.loadtxt(input_filename + ".txt", delimiter='\t')
+    hns_features, hew_features, harmonics, data = read_signals(input_filename + ".txt")
     HNS = data[:, 0]
     HEW = data[:, 1]
     # end_reading = time.time()
@@ -92,7 +111,10 @@ def transform_signal(input_filename, freq, fmin, fmax, do_plot=False):
     np.savez(buffer,
              freqs=frequencies,
              NS=S_NS,
-             EW=S_EW)
+             EW=S_EW,
+             NS_features=hns_features,
+             EW_features=hew_features,
+             harmonics=harmonics)
 
     # Compress the buffer using zstandard
     compressed_data = zstd.ZstdCompressor(level=3).compress(buffer.getvalue())
@@ -114,8 +136,8 @@ if __name__ == "__main__":
     # Get a list of all .txt files in the directory
     txt_files = [filename for filename in os.listdir(input_directory) if filename.endswith('.txt')]
 
-    # Create a progress bar
-    for filename in tqdm(txt_files, desc="Processing files", unit="file"):
+    for filename in tqdm(txt_files, unit="file",
+                         bar_format='|\033[94m{bar}\033[0m| {percentage:3.0f}%', ncols=107):
         input_filename = os.path.splitext(filename)[0]  # Remove .txt extension
         transform_signal(os.path.join(input_directory, input_filename), frequency, 3, 48, False)
 

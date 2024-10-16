@@ -1,5 +1,6 @@
 
 #include "io.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -110,8 +111,33 @@ void calibrate_HYL(int *Bx, int *By, int length, double **calibrated_Bx, double 
     }
 }
 
-void save_signals(double *HNS, double *HEW, int length, const char *output_file) {
+void save_signals(double *HNS, double *HEW,
+        TimeDomainFeatures hns_features, TimeDomainFeatures hew_features, Harmonic* harmonics,
+        int length, const char *output_file) {
     FILE *f = fopen(output_file, "w");
+    // Write the HNS time-domain features to the file (only values)
+    fprintf(f, "%f\t%f\t%f\t%d\t%f\t%f\n",
+            hns_features.mean,
+            hns_features.std,
+            hns_features.rms,
+            hns_features.zcr,
+            hns_features.skewness,
+            hns_features.kurtosis);
+
+    // Write the HEW time-domain features to the file (only values)
+    fprintf(f, "%f\t%f\t%f\t%d\t%f\t%f\n",
+            hew_features.mean,
+            hew_features.std,
+            hew_features.rms,
+            hew_features.zcr,
+            hew_features.skewness,
+            hew_features.kurtosis);
+
+    // Write the harmonics values (only peak frequency and amplitude for each harmonic)
+    for (int h = 0; h < NUM_HARMONICS; h++) {
+        fprintf(f, "%f\t%f\n", harmonics[h].peak_frequency, harmonics[h].amplitude);
+    }
+
     if (!f) {
         perror("File opening failed");
         return;

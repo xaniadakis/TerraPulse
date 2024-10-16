@@ -60,20 +60,19 @@ double calculate_kurtosis(double *signal, int length, double mean, double std) {
 }
 
 // Example function to extract time-domain features
-void extract_time_domain_features(double *signal, int length) {
-    double mean = calculate_mean(signal, length);
-    double std = calculate_std(signal, length, mean);
-    double rms = calculate_rms(signal, length);
-    int zcr = calculate_zcr(signal, length);
-    double skewness = calculate_skewness(signal, length, mean, std);
-    double kurtosis = calculate_kurtosis(signal, length, mean, std);
+TimeDomainFeatures extract_time_domain_features(double *signal, int length) {
+    TimeDomainFeatures features;
 
-    printf("Mean: %f\n", mean);
-    printf("Standard Deviation: %f\n", std);
-    printf("RMS: %f\n", rms);
-    printf("Zero Crossing Rate: %d\n", zcr);
-    printf("Skewness: %f\n", skewness);
-    printf("Kurtosis: %f\n", kurtosis);
+    // Calculate and store each feature in the struct
+    features.mean = calculate_mean(signal, length);
+    features.std = calculate_std(signal, length, features.mean);
+    features.rms = calculate_rms(signal, length);
+    features.zcr = calculate_zcr(signal, length);
+    features.skewness = calculate_skewness(signal, length, features.mean, features.std);
+    features.kurtosis = calculate_kurtosis(signal, length, features.mean, features.std);
+
+    return features;
+
 }
 
 void extract_frequency_domain_features(double *psd, int length, double sampling_frequency, double min_frequency, double max_frequency) {

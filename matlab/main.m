@@ -1,4 +1,7 @@
 function main()
+    % Prompt the user for input and store the value
+    num_lorentzians = input('Enter the num of lorentzians: ');
+
     % Set parameters
     input_dir = '/media/vag/Users/echan/Documents/Parnon/20230106/';
     sampling_frequency = 5e6 / 128 / 13;
@@ -18,39 +21,31 @@ function main()
     for k = 1:min(i, num_files)
         % Read the .dat file
         input_dat_file = fullfile(input_dir, files(k).name);
-        [HNS, HEW, nr] = read_dat_file(input_dat_file);
+        [HNS, HEW, nr, tini] = ELA11C_ADCread(input_dat_file);
 
         % Calibrate the data
         [calibrated_HNS, calibrated_HEW] = calibrate_HYL(HNS, HEW, nr);
         downsampled_HNS = downsample_signal(calibrated_HNS, downsampling_factor);
         downsampled_HEW = downsample_signal(calibrated_HEW, downsampling_factor);
 
+        % Print the first 10 samples of the downsampled signals
+        fprintf('First 10 samples of downsampled HNS:\n');
+        disp(downsampled_HNS(1:min(10, length(downsampled_HNS))));
+        
+        fprintf('First 10 samples of downsampled HEW:\n');
+        disp(downsampled_HEW(1:min(10, length(downsampled_HEW))));
+
         % Plot the signals
         % Define parameters
         signal_duration = 300;  % in seconds
-        sampling_rate = 100;    % in Hz (100 samples per second)
-        downsampled_length = length(downsampled_HNS);  % Assuming both signals have the same length
+        sampling_rate = 5e6 / 128 / 13;    % in Hz (100 samples per second)
         
-        % Create time vector for the downsampled signals
-        time_vector = linspace(0, signal_duration, downsampled_length);
-        
-        % Plot the signals in linear time space
-        figure;
-        
-        % Plot downsampled HNS signal
-        subplot(2, 1, 1);
-        plot(time_vector, downsampled_HNS);
-        title('Downsampled HNS Signal');
-        xlabel('Time (seconds)');
-        ylabel('Amplitude');
-        
-        % Plot downsampled HEW signal
-        subplot(2, 1, 2);
-        plot(time_vector, downsampled_HEW);
-        title('Downsampled HEW Signal');
-        xlabel('Time (seconds)');
-        ylabel('Amplitude');
+        % plot_schumann_signal(calibrated_HNS, calibrated_HEW, signal_duration)
 
+        [p_NS_filtered, f_NS_filtered, ~, ~] = plot_schumann_psd(calibrated_HNS, calibrated_HEW, sampling_rate);
+
+        lorentzian_fit_psd(f_NS_filtered, p_NS_filtered, num_lorentzians);
+        % lorentzian_fit(f_NS_filtered, p_NS_filtered, num_lorentzians);
 
     end
 end

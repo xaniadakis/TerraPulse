@@ -1,7 +1,7 @@
 # Variables
 CC = gcc
 CFLAGS = -Wall -Iinclude
-LDFLAGS = -lm -lfftw3   # Link against the math and FFTW libraries
+LDFLAGS = -lm -lfftw3 -lgsl -lgslcblas
 SRCDIR = src
 INCDIR = include
 OBJDIR = build
