@@ -47,8 +47,8 @@ def read_signals(file_path):
 def transform_signal(input_filename, freq, fmin, fmax, do_plot=False):
     # Read from text file and plot
     # start_reading = time.time()
-    # data = np.loadtxt(input_filename + ".txt", delimiter='\t')
-    hns_features, hew_features, harmonics, data = read_signals(input_filename + ".txt")
+    data = np.loadtxt(input_filename + ".txt", delimiter='\t')
+    # hns_features, hew_features, harmonics, data = read_signals(input_filename + ".txt")
     HNS = data[:, 0]
     HEW = data[:, 1]
     # end_reading = time.time()
@@ -112,9 +112,10 @@ def transform_signal(input_filename, freq, fmin, fmax, do_plot=False):
              freqs=frequencies,
              NS=S_NS,
              EW=S_EW,
-             NS_features=hns_features,
-             EW_features=hew_features,
-             harmonics=harmonics)
+             # NS_features=hns_features,
+             # EW_features=hew_features,
+             # harmonics=harmonics
+             )
 
     # Compress the buffer using zstandard
     compressed_data = zstd.ZstdCompressor(level=3).compress(buffer.getvalue())
@@ -123,7 +124,7 @@ def transform_signal(input_filename, freq, fmin, fmax, do_plot=False):
     with open(input_filename + '.zst', 'wb') as f:
         f.write(compressed_data)
 
-    delete_file(input_filename+".txt")
+    # delete_file(input_filename+".txt")
 
 if __name__ == "__main__":
     input_directory = "./output/"  # Replace with your directory

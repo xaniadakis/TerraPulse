@@ -1,51 +1,50 @@
-function main()
-    % Prompt the user for input and store the value
-    num_lorentzians = input('Enter the num of lorentzians: ');
+function main(numLorentzians)
+    % Check if num_lorentzians is provided
+    if nargin < 1
+        error('You must provide the number of Lorentzians as a command-line argument.');
+    end
 
     % Set parameters
-    input_dir = '/media/vag/Users/echan/Documents/Parnon/20230106/';
+    input_dir = '../output/';
     sampling_frequency = 5e6 / 128 / 13;
     downsampling_factor = 30;
+    downsampling_rate = sampling_frequency / downsampling_factor;
 
-    % List all .dat files in the input directory
-    files = dir(fullfile(input_dir, '*.dat'));
-    
+    % List all .txt files in the input directory
+    files = dir(fullfile(input_dir, '*.txt'));
     if isempty(files)
-        error('No .dat files found in the input directory.');
+        error('No .txt files found in the input directory.');
     end
 
-    i = 1;  % Set the number of iterations you want
+    i = Inf;  % Set the number of iterations you want (or the number of files to process)
     num_files = numel(files);
     
-    % Loop through the files but stop after min(i, num_files) iterations
+    tic;
+    % Process up to i files
     for k = 1:min(i, num_files)
-        % Read the .dat file
-        input_dat_file = fullfile(input_dir, files(k).name);
-        [HNS, HEW, nr, tini] = ELA11C_ADCread(input_dat_file);
-
-        % Calibrate the data
-        [calibrated_HNS, calibrated_HEW] = calibrate_HYL(HNS, HEW, nr);
-        downsampled_HNS = downsample_signal(calibrated_HNS, downsampling_factor);
-        downsampled_HEW = downsample_signal(calibrated_HEW, downsampling_factor);
-
-        % Print the first 10 samples of the downsampled signals
-        fprintf('First 10 samples of downsampled HNS:\n');
-        disp(downsampled_HNS(1:min(10, length(downsampled_HNS))));
+        % Display progress percentage
+        fprintf(1, '\rProcessing file %d of %d (%.2f%%)', k, min(i, num_files), (k / min(i, num_files)) * 100);
         
-        fprintf('First 10 samples of downsampled HEW:\n');
-        disp(downsampled_HEW(1:min(10, length(downsampled_HEW))));
+        % Load data from the .txt file
+        input_filename = fullfile(input_dir, files(k).name);
+        data = load(input_filename);  % Load the data from the file
+        % data = dlmread(input_filename, '\n', 2, 0);  % Read data, skipping the first two lines
 
-        % Plot the signals
-        % Define parameters
-        signal_duration = 300;  % in seconds
-        sampling_rate = 5e6 / 128 / 13;    % in Hz (100 samples per second)
-        
-        % plot_schumann_signal(calibrated_HNS, calibrated_HEW, signal_duration)
+        downsampled_HNS = data(:, 1);  % First column
+        downsampled_HEW = data(:, 2);  % Second column
 
-        [p_NS_filtered, f_NS_filtered, ~, ~] = plot_schumann_psd(calibrated_HNS, calibrated_HEW, sampling_rate);
+        % Compute the power spectral density (PSD)
+        [p_NS_filtered, f_NS_filtered, p_EW_filtered, f_EW_filtered] = plot_schumann_psd(downsampled_HNS, downsampled_HEW, downsampling_rate);
 
-        lorentzian_fit_psd(f_NS_filtered, p_NS_filtered, num_lorentzians);
-        % lorentzian_fit(f_NS_filtered, p_NS_filtered, num_lorentzians);
+        % Perform the Lorentzian fit and plot the results
+        fitResults = plot_combined_lorentzian_fit(f_NS_filtered, p_NS_filtered, f_EW_filtered, p_EW_filtered, numLorentzians, false);
 
+        % Save fitResults in a compressed .mat file with the same name as the input .txt file
+        [~, file_name, ~] = fileparts(files(k).name);  % Extract the file name without extension
+        save(fullfile(input_dir, [file_name, '.mat']), 'fitResults', '-v7.3');  % Save as compressed .mat file
     end
+    toc;
+    num_files
+    
+    fprintf('Processing complete.\n');
 end

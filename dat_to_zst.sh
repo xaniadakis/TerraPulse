@@ -20,6 +20,11 @@ echo -e "${YELLOW}Running dat_to_text...${NC}"
 ./c/build/dat_to_text
 echo -e "${GREEN}dat_to_text execution complete.${NC}"
 
+# Step 3: Run dat_to_text
+echo -e "${YELLOW}Fitting lorentzians...${NC}"
+matlab -nodisplay -nosplash -nodesktop -r "cd('/home/vag/PycharmProjects/TerraPulse/matlab'); main(7); exit;"
+echo -e "${GREEN}fitting complete.${NC}"
+
 # Step 4: Run signal_to_psd.py
 echo -e "${YELLOW}Running signal_to_psd...${NC}"
 python3 ./py/signal_to_psd.py

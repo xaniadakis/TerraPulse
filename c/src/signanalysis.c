@@ -8,10 +8,9 @@
 
 double known_schumann_frequencies[] = {7.83, 14.3, 20.8, 27.3, 33.8, 39.9, 46.6};
 
-void compute_psd(double *signal, int length, char *output_file, double sampling_frequency, double min_frequency, double max_frequency) {
+void compute_psd(double *signal, int length, double *frequencies, double *psd, char *output_file, double sampling_frequency, double min_frequency, double max_frequency) {
     fftw_complex *out = (fftw_complex *) fftw_malloc(sizeof(fftw_complex) * (length / 2 + 1));
     double *in = (double *) fftw_malloc(sizeof(double) * length);
-    double *psd = (double *) malloc(sizeof(double) * (length / 2 + 1));
 
     // Copy the input signal into the FFTW input buffer
     for (int i = 0; i < length; i++) {
@@ -35,10 +34,20 @@ void compute_psd(double *signal, int length, char *output_file, double sampling_
     }
 
     // Write frequency and PSD to the output file
+    // for (int i = 0; i < length / 2 + 1; i++) {
+    //     double frequency = (double) i * sampling_frequency / length;
+    //     if (frequency >= min_frequency && frequency <= max_frequency) {
+    //         fprintf(f, "%.6f\t%.6f\n", frequency, psd[i]);
+    //     }
+    // }
     for (int i = 0; i < length / 2 + 1; i++) {
-        double frequency = (double) i * sampling_frequency / length;
-        if (frequency >= min_frequency && frequency <= max_frequency) {
-            fprintf(f, "%.6f\t%.6f\n", frequency, psd[i]);
+        frequencies[i] = (double) i * sampling_frequency / length;  // Calculate frequency
+        psd[i] = (out[i][0] * out[i][0] + out[i][1] * out[i][1]) / (length * sampling_frequency);  // Calculate PSD
+        // Optional: Limit the PSD to the specified frequency range
+        if (frequencies[i] >= min_frequency && frequencies[i] <= max_frequency) {
+            fprintf(f, "%.6f\t%.6f\n", frequencies[i], psd[i]);
+        } else {
+            psd[i] = 0;  // Ignore out-of-range frequencies
         }
     }
 
@@ -46,7 +55,7 @@ void compute_psd(double *signal, int length, char *output_file, double sampling_
     fclose(f);
 
     // Call a function to extract frequency domain features (if needed)
-    extract_frequency_domain_features2(psd, length / 2 + 1, sampling_frequency, min_frequency, max_frequency);
+    // extract_frequency_domain_features2(psd, length / 2 + 1, sampling_frequency, min_frequency, max_frequency);
 
     // Cleanup FFT resources
     fftw_destroy_plan(plan);

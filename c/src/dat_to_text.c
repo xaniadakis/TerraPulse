@@ -1,16 +1,15 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
 #include <time.h>
 #include <string.h>
 #include <dirent.h>
 #include <sys/stat.h>
-#include <math.h>
 #include <fftw3.h>
 #include "feature.h"
 #include "io.h"
 #include "signanalysis.h"
 #include <stdbool.h>
+#include "lorentzianLib.h"  // Include the generated header file
 
 #define PROGRESS_BAR_WIDTH 100  // Width of the progress bar
 #define TEST 0
@@ -41,10 +40,10 @@ int main() {
 
     const char *input_dir = "/media/vag/Users/echan/Documents/Parnon/20230106/";
     const char *output_dir = "./output/";
-    double sampling_frequency = 5e6 / 128 / 13;
+//    double sampling_frequency = 5e6 / 128 / 13;
     // double downsampled_frequency = 5e6 / 128 / 13 / DOWNSAMPLING_FACTOR;
-    // double min_freq = 3.0;
-    // double max_freq = 48.0;
+//    double min_freq = 3.0;
+//    double max_freq = 48.0;
 
     // Create output directory if it doesn't exist
     struct stat st = {0};
@@ -80,53 +79,31 @@ int main() {
             snprintf(output_file, sizeof(output_file), "%s%s.txt", output_dir, strtok(entry->d_name, "."));
 
             int *HNS = NULL, *HEW = NULL, nr = 0;
-
-            // Start reading the DAT file
-            // clock_t start_reading = clock();
             read_dat_file(input_dat_file, &HNS, &HEW, &nr);
-            // clock_t end_reading = clock();
-            // double reading_time = (double) (end_reading - start_reading) / CLOCKS_PER_SEC;
 
-            // Start calibrating
-            // clock_t start_calibrating = clock();
             double *calibrated_HNS = NULL, *calibrated_HEW = NULL;
             calibrate_HYL(HNS, HEW, nr, &calibrated_HNS, &calibrated_HEW);
-            // clock_t end_calibrating = clock();
-            // double calibration_time = (double) (end_calibrating - start_calibrating) / CLOCKS_PER_SEC;
 
-            // printf("\n%.4s-%.2s-%.2s %.2s:%.2s\n", entry->d_name, entry->d_name + 4,
-            //        entry->d_name + 6, entry->d_name + 8, entry->d_name + 10);
-
-			TimeDomainFeatures hns_features = extract_time_domain_features(calibrated_HNS, nr);
-        	// printf("HNS:\n");
-			// printf("Mean: %f\n", hns_features.mean);
-			// printf("Standard Deviation: %f\n", hns_features.std);
-			// printf("RMS: %f\n", hns_features.rms);
-			// printf("Zero Crossing Rate: %d\n", hns_features.zcr);
-			// printf("Skewness: %f\n", hns_features.skewness);
-			// printf("Kurtosis: %f\n", hns_features.kurtosis);
-
-        	TimeDomainFeatures hew_features = extract_time_domain_features(calibrated_HEW, nr);
-        	// printf("HEW:\n");
-        	// printf("Mean: %f\n", hew_features.mean);
-        	// printf("Standard Deviation: %f\n", hew_features.std);
-        	// printf("RMS: %f\n", hew_features.rms);
-        	// printf("Zero Crossing Rate: %d\n", hew_features.zcr);
-        	// printf("Skewness: %f\n", hew_features.skewness);
-        	// printf("Kurtosis: %f\n", hew_features.kurtosis);
+			TimeDomainFeatures* hns_features = NULL;
+//			extract_time_domain_features(calibrated_HNS, nr);
+        	TimeDomainFeatures* hew_features = NULL;
+//        	extract_time_domain_features(calibrated_HEW, nr);
 
             // Call the PSD computation function
-			char psd_output_file[1024];
-			snprintf(psd_output_file, sizeof(psd_output_file), "%s%s_psd.txt", output_dir, strtok(entry->d_name, "."));
+//			char psd_output_file[1024];
+//			snprintf(psd_output_file, sizeof(psd_output_file), "%s%s_psd.txt", output_dir, strtok(entry->d_name, "."));
 			// compute_psd(calibrated_HNS, nr, psd_output_file, sampling_frequency, min_freq, max_freq);
-            // find_modes(downsampled_HNS, downsampled_length, sampling_frequency, min_freq, max_freq, 7); // Call with HNS signal
-			Harmonic* harmonics = analyze_schumann_harmonics(calibrated_HNS, nr, sampling_frequency);
 
-			// Check if harmonics is not NULL and process the results
-    		// for (int i = 0; i < NUM_HARMONICS; i++) {
-				// printf("Harmonic %d: Target F = %.2f Hz, Peak F = %.6f Hz, Amplitude = %.6f\n",
-				// i + 1, harmonics[i].target_frequency, harmonics[i].peak_frequency, harmonics[i].amplitude);
-    		// }
+            // Allocate memory for frequencies and PSD values
+            // int num_psd_points = nr / 2 + 1;
+            // double *frequencies = (double *) malloc(sizeof(double) * num_psd_points);
+            // double *psd_values = (double *) malloc(sizeof(double) * num_psd_points);
+
+            // Compute the PSD
+            // compute_psd(calibrated_HNS, nr, frequencies, psd_values, psd_output_file, sampling_frequency, min_freq, max_freq);
+
+            // find_modes(downsampled_HNS, downsampled_length, sampling_frequency, min_freq, max_freq, 7); // Call with HNS signal
+			// Harmonic* harmonics = analyze_schumann_harmonics(calibrated_HNS, nr, sampling_frequency);
 
             int downsampled_length = nr / DOWNSAMPLING_FACTOR;
             double *downsampled_HNS = (double *) malloc(downsampled_length * sizeof(double));
@@ -137,21 +114,7 @@ int main() {
             downsample_signal(calibrated_HEW, downsampled_HEW, downsampled_length);
 
             // Save downsampled signals to file
-            save_signals(downsampled_HNS, downsampled_HEW, hns_features, hew_features, harmonics, downsampled_length, output_file);
-
-            // Print timing information
-            // FILE *file = fopen(input_dat_file, "rb");
-            // fseek(file, 0, SEEK_END);
-            // long file_size = ftell(file);
-            // fclose(file);
-
-            // double file_size_mb = (double)file_size / (1024 * 1024);
-            // double initial_frequency = 5e6 / 128 / 13;  // Example frequency value
-            // printf("\nProcessed file: %s", input_dat_file);
-            // printf("\nDAT file size: %.2f MB, Samples: %d, Initial Frequency: %.2f Hz", file_size_mb, nr, initial_frequency);
-            // printf("\nTime to read: %.4f seconds", reading_time);
-            // printf("\nTime to calibrate: %.4f seconds", calibration_time);
-            // printf("%s\n", output_file);
+            save_signals(downsampled_HNS, downsampled_HEW, hns_features, hew_features, NULL, downsampled_length, output_file);
 
             // Free allocated memory
             free(HNS);
@@ -160,7 +123,7 @@ int main() {
             free(calibrated_HEW);
             free(downsampled_HNS);
             free(downsampled_HEW);
-            free(harmonics);
+            // free(harmonics);
         }
     	processed_files++;
     	print_progress_bar(processed_files, total_files);
@@ -179,3 +142,4 @@ int main() {
 
     return 0;
 }
+
