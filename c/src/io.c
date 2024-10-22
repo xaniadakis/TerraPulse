@@ -5,11 +5,11 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-void read_dat_file(const char *fn, int **Bx, int **By, int *nr_out) {
+int read_dat_file(const char *fn, int **Bx, int **By, int *nr_out) {
     FILE *f = fopen(fn, "rb");
     if (!f) {
         perror("File opening failed");
-        return;
+        return 1;
     }
 
     fseek(f, 64, SEEK_SET);
@@ -21,7 +21,7 @@ void read_dat_file(const char *fn, int **Bx, int **By, int *nr_out) {
     if (!data) {
         perror("Memory allocation failed");
         fclose(f);
-        return;
+        return 2;
     }
 
     fread(data, 1, file_size, f);
@@ -36,7 +36,7 @@ void read_dat_file(const char *fn, int **Bx, int **By, int *nr_out) {
     if (!(*Bx) || !(*By)) {
         perror("Memory allocation failed");
         free(data);
-        return;
+        return 2;
     }
 
     int a = 65536;
@@ -80,6 +80,7 @@ void read_dat_file(const char *fn, int **Bx, int **By, int *nr_out) {
 
     *nr_out = nr;
     free(data);
+    return 0;
 }
 
 void calibrate_HYL(int *Bx, int *By, int length, double **calibrated_Bx, double **calibrated_By) {
