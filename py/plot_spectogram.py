@@ -3,98 +3,133 @@ import zstandard as zstd
 import os
 import io
 import matplotlib.pyplot as plt
-import sys
+import argparse
+from multiprocessing import Pool, cpu_count
+import time
+from datetime import datetime, timedelta
 
-# Load PSD from .zst file
+# Create directory if it doesn't exist
+def create_dir_if_not_exists(directory):
+    os.makedirs(directory, exist_ok=True)
+
+# Efficiently load and decompress PSD from .zst file
 def load_psd_zst_file(filename):
-    # Read and decompress the .zst file
     with open(filename, 'rb') as f:
-        compressed_data = f.read()
-
-    # Decompress the .zst data
-    decompressed_data = zstd.ZstdDecompressor().decompress(compressed_data)
-
-    # Load the decompressed data as a npz
+        decompressed_data = zstd.ZstdDecompressor().decompress(f.read())
     buffer = io.BytesIO(decompressed_data)
-    npz_data = np.load(buffer)
-
+    npz_data = np.load(buffer, allow_pickle=False)
     return npz_data['freqs'], npz_data['NS'], npz_data['EW']
 
+# Plot spectrogram with optional downsampling
+def plot_spectrogram(psd_data, frequencies, time_points, start_date, end_date, output_filename=None, downsample_factor=1, days=1):
+    start_time = time.time()
+    psd_data_db = np.where(psd_data > 0, 10 * np.log10(psd_data), -np.inf)
 
-# Plot the spectrogram
-def plot_spectrogram(psd_data, frequencies, time_points, output_filename=None):
-    # Convert PSD data to dB (optional, for better visualization)
-    psd_data_db = 10 * np.log10(psd_data)
+    # Apply downsampling for faster plotting if specified
+    psd_data_db = psd_data_db[::downsample_factor, :]
+    frequencies = frequencies[::downsample_factor]
 
     plt.figure(figsize=(12, 6))
-    plt.pcolormesh(time_points, frequencies, psd_data_db, shading='auto', cmap='inferno', vmax=5, vmin=-20)
+    plt.pcolormesh(time_points, frequencies, psd_data_db, shading='auto', cmap='inferno', vmax=10, vmin=-20)
     plt.colorbar(label='PSD (dB)')
     plt.ylabel('Frequency [Hz]')
     plt.xlabel('Time [hours]')
-    plt.title(f'Spectrogram of PSD Data for {time_points[-1]:.1f} hours')
+    plt.title(f'Spectrogram of PSD Data from {start_date.strftime("%Y-%m-%d %H:%M")} to {end_date.strftime("%Y-%m-%d %H:%M")}')
 
-    # Set more frequent ticks for the x-axis (time in hours)
-    time_tick_interval = 6  # Set tick interval in hours (every 6 hours)
-    time_ticks = np.arange(0, max(time_points) + time_tick_interval, time_tick_interval)
-    plt.xticks(time_ticks, rotation=45, ha='right')  # Rotate x-axis labels diagonally
+    # Set xtick positions and labels
+    target_ticks = 20  # Target number of xticks
+    time_range = max(time_points)
+    xticks_interval = round(time_range / target_ticks)
 
-    # Set more frequent ticks for the y-axis (frequency in Hz)
-    freq_tick_interval = 5  # Set tick interval in Hz (every 5 Hz)
-    freq_ticks = np.arange(0, max(frequencies) + freq_tick_interval, freq_tick_interval)
-    plt.yticks(freq_ticks)  # Apply the frequency ticks to the y-axis
+    # Exact start and end tick positions
+    xtick_positions = [0]  # Start with real start date at position 0
+    current_pos = xticks_interval
 
-    # Improve layout
+    # Intermediate ticks, rounding to the nearest hour
+    while current_pos < time_range:
+        rounded_pos = round(current_pos)  # Nearest hour format ..:00
+        xtick_positions.append(rounded_pos)
+        current_pos += xticks_interval
+
+    xtick_positions.append(time_range)  # End tick at exact end date
+
+    # Generate labels for xticks, ensuring the first and last are the real start and end dates
+    xtick_labels = [start_date.strftime("%d/%m %H:%M")]  # Label for real start date
+    for pos in xtick_positions[1:-1]:  # Intermediate labels rounded to ..:00
+        xtick_labels.append((start_date + timedelta(hours=pos)).strftime("%d/%m %H:00"))
+    xtick_labels.append(end_date.strftime("%d/%m %H:%M"))  # Label for real end date
+
+    plt.xticks(xtick_positions, labels=xtick_labels, rotation=68, ha='center',  fontsize=9.5)
+    
+    plt.yticks(np.arange(0, max(frequencies) + 5, 5))
     plt.tight_layout()
+
     if output_filename:
-        plt.savefig(output_filename, dpi=300)  # Save to file
-        print(f"Spectrogram saved to {output_filename}")
+        plt.savefig(output_filename, dpi=300)
     else:
         plt.show()
+    plt.close()
+    print(f"Plotting time: {time.time() - start_time:.2f} seconds")
 
-    plt.close()  # Close the plot to avoid memory issues
+# Multiprocessing function for loading files
+def parallel_load_zst_files(filenames):
+    with Pool(cpu_count()) as pool:
+        return pool.map(load_psd_zst_file, filenames)
 
-
-# Generate the spectrogram for a specific duration from .zst files
-def generate_spectrogram_from_zst_files(directory, days=1, minutes_per_file=5):
-    psd_NS_list = []
+# Generate spectrogram from multiple .zst files with multiprocessing and memory optimization
+def generate_spectrogram_from_zst_files(directory, days=1, minutes_per_file=5, downsample_factor=1):
+    start_time = time.time()
     time_points = []
-    frequencies = None
-    total_minutes = days * 24 * 60  # Total minutes for the specified duration
-    total_files = total_minutes // minutes_per_file  # Total number of files
+    total_files = (days * 24 * 60) // minutes_per_file
+    print(f'Will read {total_files} total zst files')
+    zst_files = sorted(f for f in os.listdir(directory) if f.endswith('.zst'))[:total_files]
 
-    # Get a sorted list of all .zst files in the directory
-    zst_files = sorted([filename for filename in os.listdir(directory) if filename.endswith('.zst')])
-
-    # Check if the number of files matches the expected amount
     if len(zst_files) < total_files:
-        print(f"Warning: Not enough files for the specified duration. Found {len(zst_files)}, but expected {total_files}.")
+        print(f"Warning: Not enough files. Found {len(zst_files)}, expected {total_files}.")
 
-    # Loop over each file and load the PSD data
-    for i, zst_file in enumerate(zst_files[:total_files]):  # Limit to total_files
-        freqs, S_NS, S_EW = load_psd_zst_file(os.path.join(directory, zst_file))
+    # Print the first and last .zst files
+    if zst_files:
+        print(f"First .zst file: {zst_files[0]}")
+        print(f"Last .zst file: {zst_files[-1]}")
 
-        # Append the PSD data for the NS component
-        psd_NS_list.append(S_NS)
+    # Determine start and end dates
+    start_date_str = zst_files[0].split('\\')[-1].split('.')[0]  # Extract the date from the filename
+    start_date = datetime.strptime(start_date_str, "%Y%m%d%H%M")
 
-        # Store time point in hours (each file is 'minutes_per_file' minutes)
-        time_points.append(i * minutes_per_file / 60.0)
+    # Determine end date based on the last file's timestamp and add 5 minutes
+    last_file_str = zst_files[-1].split('\\')[-1].split('.')[0]
+    last_file_date = datetime.strptime(last_file_str, "%Y%m%d%H%M")
+    end_date = last_file_date + timedelta(minutes=5)
 
-        # Store frequencies (assuming they are the same for all files)
-        if frequencies is None:
-            frequencies = freqs
+    # Load files with multiprocessing
+    load_start_time = time.time()
+    results = parallel_load_zst_files([os.path.join(directory, f) for f in zst_files])
+    print(f"File loading time: {time.time() - load_start_time:.2f} seconds")
 
-    # Convert list of PSD data to 2D numpy array
-    psd_NS_matrix = np.array(psd_NS_list).T  # Transpose to make it (frequencies x time)
+    # Collect frequencies and time points, and form the matrix
+    frequencies = results[0][0]
+    psd_NS_list = [result[1] for result in results]
+    time_points = [i * minutes_per_file / 60.0 for i in range(len(results))]
 
-    # Plot the spectrogram
-    plot_spectrogram(psd_NS_matrix, frequencies, time_points, output_filename=f"{days}_days_spectrogram.png")
+    # Memory-mapped array for efficient large matrix handling
+    matrix_start_time = time.time()
+    psd_NS_matrix = np.memmap('/tmp/psd_ns_matrix.dat', dtype='float32', mode='w+', shape=(len(frequencies), len(psd_NS_list)))
+    for i, S_NS in enumerate(psd_NS_list):
+        psd_NS_matrix[:, i] = S_NS
+    psd_NS_matrix.flush()
+    print(f"Matrix creation and memory mapping time: {time.time() - matrix_start_time:.2f} seconds")
 
+    create_dir_if_not_exists(f'{directory}/spectograms')
+    plot_spectrogram(psd_NS_matrix, frequencies, time_points, start_date, end_date,
+                     output_filename=f"{directory}/spectograms/{days}_days_spectrogram.png", downsample_factor=downsample_factor, days=days)
+    print(f"Total time: {time.time() - start_time:.2f} seconds")
 
+# Command-line interface
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: python script.py <days_to_plot>")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description="Generate spectrogram from .zst files in a directory")
+    parser.add_argument("directory", help="Path to the directory containing .zst files")
+    parser.add_argument("--days", type=int, default=1, help="Number of days to plot")
+    parser.add_argument("--downsample", type=int, default=1, help="Downsample factor for faster plotting")
+    args = parser.parse_args()
 
-    input_directory = "../output/"  # Replace with the path to your directory containing .zst files
-    days_to_plot = int(sys.argv[1])
-    generate_spectrogram_from_zst_files(input_directory, days=days_to_plot)
+    generate_spectrogram_from_zst_files(args.directory, days=args.days, downsample_factor=args.downsample)
