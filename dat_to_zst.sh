@@ -13,12 +13,12 @@ start_time=$(date +%s)
 
 echo -e "${YELLOW}Removing old directories...${NC}"
 rm -rf ./output
-make -s clean all -C ./c
+make clean all -C ./c
 
 # Step 3: Run dat_to_text
 echo -e "${YELLOW}Running dat_to_text...${NC}"
-./c/build/dat_to_text
-echo -e "${GREEN}dat_to_text execution complete.${NC}"
+./c/build/p_dat_to_text
+echo -e "${GREEN}p_dat_to_text execution complete.${NC}"
 
 # Step 3: Run dat_to_text
 echo -e "${YELLOW}Fitting lorentzians...${NC}"

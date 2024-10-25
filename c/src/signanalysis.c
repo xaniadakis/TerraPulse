@@ -29,7 +29,7 @@ void compute_psd(double *signal, int length, double *frequencies, double *psd, c
     // Open the output file for writing
     FILE *f = fopen(output_file, "w");
     if (!f) {
-        perror("File opening failed");
+        perror("compute_psd: File opening failed");
         return;
     }
 

@@ -1,7 +1,7 @@
 function [Bx, By, nr] = read_dat_file(fn)
     fid = fopen(fn, 'rb');
     if fid == -1
-        error('File opening failed');
+        error('read_dat_file: File opening failed');
     end
 
     fseek(fid, 64, 'bof');

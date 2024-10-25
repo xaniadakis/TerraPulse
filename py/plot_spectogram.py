@@ -82,7 +82,13 @@ def generate_spectrogram_from_zst_files(directory, days=1, minutes_per_file=5, d
     time_points = []
     total_files = (days * 24 * 60) // minutes_per_file
     print(f'Will read {total_files} total zst files')
-    zst_files = sorted(f for f in os.listdir(directory) if f.endswith('.zst'))[:total_files]
+
+    # Recursively collect all .zst files from the directory structure
+    zst_files = []
+    for root, dirs, files in os.walk(directory):
+        zst_files.extend([os.path.join(root, f) for f in files if f.endswith('.zst')])
+
+    zst_files = sorted(zst_files)[:total_files]
 
     if len(zst_files) < total_files:
         print(f"Warning: Not enough files. Found {len(zst_files)}, expected {total_files}.")
@@ -93,25 +99,22 @@ def generate_spectrogram_from_zst_files(directory, days=1, minutes_per_file=5, d
         print(f"Last .zst file: {zst_files[-1]}")
 
     # Determine start and end dates
-    start_date_str = zst_files[0].split('\\')[-1].split('.')[0]  # Extract the date from the filename
+    start_date_str = zst_files[0].split(os.sep)[-1].split('.')[0]  # Extract the date from the filename
     start_date = datetime.strptime(start_date_str, "%Y%m%d%H%M")
 
-    # Determine end date based on the last file's timestamp and add 5 minutes
-    last_file_str = zst_files[-1].split('\\')[-1].split('.')[0]
+    last_file_str = zst_files[-1].split(os.sep)[-1].split('.')[0]
     last_file_date = datetime.strptime(last_file_str, "%Y%m%d%H%M")
     end_date = last_file_date + timedelta(minutes=5)
 
     # Load files with multiprocessing
     load_start_time = time.time()
-    results = parallel_load_zst_files([os.path.join(directory, f) for f in zst_files])
+    results = parallel_load_zst_files(zst_files)
     print(f"File loading time: {time.time() - load_start_time:.2f} seconds")
 
-    # Collect frequencies and time points, and form the matrix
     frequencies = results[0][0]
     psd_NS_list = [result[1] for result in results]
     time_points = [i * minutes_per_file / 60.0 for i in range(len(results))]
 
-    # Memory-mapped array for efficient large matrix handling
     matrix_start_time = time.time()
     psd_NS_matrix = np.memmap('/tmp/psd_ns_matrix.dat', dtype='float32', mode='w+', shape=(len(frequencies), len(psd_NS_list)))
     for i, S_NS in enumerate(psd_NS_list):

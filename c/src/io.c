@@ -8,7 +8,7 @@
 int read_dat_file(const char *fn, int **Bx, int **By, int *nr_out) {
     FILE *f = fopen(fn, "rb");
     if (!f) {
-        perror("File opening failed");
+        perror("read_dat_file: File opening failed");
         return 1;
     }
 
@@ -44,6 +44,13 @@ int read_dat_file(const char *fn, int **Bx, int **By, int *nr_out) {
     int i = 1;
 
     for (int j = 0; j < 89; j++) {
+        if (i + 4 >= file_size) {  // Check bounds before accessing data[i + 3] and data[i + 4]
+            fprintf(stderr, "Out of bounds access in read_dat_file (loop 1) for file: %s\n", fn);
+            free(data);
+            free(*Bx);
+            free(*By);
+            return -1;
+        }
         (*Bx)[nr] = a * ((data[i] & 12) / 4) + data[i + 1] * 256 + data[i + 2];
         (*By)[nr] = a * (data[i] & 3) + data[i + 3] * 256 + data[i + 4];
         nr++;
@@ -53,6 +60,13 @@ int read_dat_file(const char *fn, int **Bx, int **By, int *nr_out) {
 
     for (int n = 0; n < 8836; n++) {
         for (int j = 0; j < 102; j++) {
+            if (i + 4 >= file_size) {  // Check bounds before accessing data[i + 3] and data[i + 4]
+                fprintf(stderr, "Out of bounds access in read_dat_file (loop 2) for file: %s\n", fn);
+                free(data);
+                free(*Bx);
+                free(*By);
+                return -1;
+            }
             (*Bx)[nr] = a * ((data[i] & 12) / 4) + data[i + 1] * 256 + data[i + 2];
             (*By)[nr] = a * (data[i] & 3) + data[i + 3] * 256 + data[i + 4];
             nr++;
@@ -62,12 +76,20 @@ int read_dat_file(const char *fn, int **Bx, int **By, int *nr_out) {
     }
 
     for (int j = 0; j < 82; j++) {
+        if (i + 4 >= file_size) {  // Check bounds before accessing data[i + 3] and data[i + 4]
+            fprintf(stderr, "Out of bounds access in read_dat_file (loop 3) for file: %s\n", fn);
+            free(data);
+            free(*Bx);
+            free(*By);
+            return -1;
+        }
         (*Bx)[nr] = a * ((data[i] & 12) / 4) + data[i + 1] * 256 + data[i + 2];
         (*By)[nr] = a * (data[i] & 3) + data[i + 3] * 256 + data[i + 4];
         nr++;
         i += 5;
     }
 
+    // Adjust for final array values
     while ((*Bx)[nr] == 0 || (*By)[nr] == 0) {
         nr--;
     }
@@ -82,6 +104,7 @@ int read_dat_file(const char *fn, int **Bx, int **By, int *nr_out) {
     free(data);
     return 0;
 }
+
 
 void calibrate_HYL(int *Bx, int *By, int length, double **calibrated_Bx, double **calibrated_By) {
     double a1_mVnT = 55.0;
@@ -141,7 +164,8 @@ void save_signals(double *HNS, double *HEW,
     // }
 
     if (!f) {
-        perror("File opening failed");
+        printf("filename: %s\n", output_file);
+        perror("save_signals: File opening failed");
         return;
     }
 
