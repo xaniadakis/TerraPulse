@@ -13,7 +13,7 @@ start_time=$(date +%s)
 
 echo -e "${YELLOW}Removing old directories...${NC}"
 rm -rf ./output
-make clean all -C ./c
+make -s clean all -C ./c
 
 # Step 3: Run dat_to_text
 echo -e "${YELLOW}Running dat_to_text...${NC}"

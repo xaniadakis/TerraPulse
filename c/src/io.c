@@ -12,7 +12,7 @@ int read_dat_file(const char *fn, int **Bx, int **By, int *nr_out) {
         return 1;
     }
 
-    fseek(f, 64, SEEK_SET);
+    fseek(f, 64, SEEK_SET);  // Skip header
     fseek(f, 0, SEEK_END);
     long file_size = ftell(f) - 64;
     fseek(f, 64, SEEK_SET);
@@ -43,9 +43,10 @@ int read_dat_file(const char *fn, int **Bx, int **By, int *nr_out) {
     int nr = 0;
     int i = 1;
 
-    for (int j = 0; j < 89; j++) {
-        if (i + 4 >= file_size) {  // Check bounds before accessing data[i + 3] and data[i + 4]
-            fprintf(stderr, "Out of bounds access in read_dat_file (loop 1) for file: %s\n", fn);
+    // Adjusted bounds check with more verbose error reporting
+    for (int j = 0; j < 89 && (i + 4 < file_size); j++) {
+        if (i + 4 >= file_size) {
+            fprintf(stderr, "Out of bounds in read_dat_file (loop 1): %d/%ld, file: %s\n", i + 4, file_size, fn);
             free(data);
             free(*Bx);
             free(*By);
@@ -58,10 +59,11 @@ int read_dat_file(const char *fn, int **Bx, int **By, int *nr_out) {
     }
     i += 2;
 
-    for (int n = 0; n < 8836; n++) {
-        for (int j = 0; j < 102; j++) {
-            if (i + 4 >= file_size) {  // Check bounds before accessing data[i + 3] and data[i + 4]
-                fprintf(stderr, "Out of bounds access in read_dat_file (loop 2) for file: %s\n", fn);
+    // Loop 2 with error reporting
+    for (int n = 0; n < 8836 && i + 4 < file_size; n++) {
+        for (int j = 0; j < 102 && i + 4 < file_size; j++) {
+            if (i + 4 >= file_size) {
+                fprintf(stderr, "Out of bounds in read_dat_file (loop 2): %d/%ld, file: %s\n", i + 4, file_size, fn);
                 free(data);
                 free(*Bx);
                 free(*By);
@@ -75,9 +77,10 @@ int read_dat_file(const char *fn, int **Bx, int **By, int *nr_out) {
         i += 2;
     }
 
-    for (int j = 0; j < 82; j++) {
-        if (i + 4 >= file_size) {  // Check bounds before accessing data[i + 3] and data[i + 4]
-            fprintf(stderr, "Out of bounds access in read_dat_file (loop 3) for file: %s\n", fn);
+    // Loop 3 with error reporting
+    for (int j = 0; j < 82 && i + 4 < file_size; j++) {
+        if (i + 4 >= file_size) {
+            fprintf(stderr, "Out of bounds in read_dat_file (loop 3): %d/%ld, file: %s\n", i + 4, file_size, fn);
             free(data);
             free(*Bx);
             free(*By);
@@ -89,8 +92,8 @@ int read_dat_file(const char *fn, int **Bx, int **By, int *nr_out) {
         i += 5;
     }
 
-    // Adjust for final array values
-    while ((*Bx)[nr] == 0 || (*By)[nr] == 0) {
+    // Adjust for trailing zero values if necessary
+    while (nr > 0 && ((*Bx)[nr] == 0 || (*By)[nr] == 0)) {
         nr--;
     }
 
@@ -104,7 +107,6 @@ int read_dat_file(const char *fn, int **Bx, int **By, int *nr_out) {
     free(data);
     return 0;
 }
-
 
 void calibrate_HYL(int *Bx, int *By, int length, double **calibrated_Bx, double **calibrated_By) {
     double a1_mVnT = 55.0;

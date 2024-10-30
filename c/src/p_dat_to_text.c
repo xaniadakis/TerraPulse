@@ -11,34 +11,58 @@
 #include "io.h"
 #include "signanalysis.h"
 
-#define PROGRESS_BAR_WIDTH 100
+#define PROGRESS_BAR_WIDTH 80
 #define DOWNSAMPLING_FACTOR 30
-
-// ANSI escape codes for color
-#define COLOR_RESET "\033[0m"
-#define COLOR_FILLED "\033[32m"  // Green for filled part
-#define COLOR_EMPTY "\033[37m"   // White for empty part
-#define COLOR_RED "\033[91m"   // White for empty part
+#define MAX_QUEUE_SIZE 1000
 
 pthread_mutex_t progress_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t queue_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t queue_cond = PTHREAD_COND_INITIALIZER;
 
+const char *input_dir = "/mnt/e/POLISH_DATA/Raw_Data";
 const char *output_dir = "/mnt/c/Users/shumann/Documents/GaioPulse/output";
 int total_files = 0;
 int processed_files = 0;
+time_t start_time;
 
 typedef struct {
     const char *input_file;
     const char *input_dir;
 } FileTask;
 
-void print_progress_bar(int progress, int total) {
+FileTask *task_queue[MAX_QUEUE_SIZE];
+int queue_front = 0;
+int queue_back = 0;
+int queue_count = 0;
+
+char* remove_last_slash(const char* path){
+    if(strncmp(path, input_dir, strlen(input_dir))==0){
+        path += strlen(input_dir);
+    }
+    const char* last_slash = strrchr(path, '/');
+    return last_slash ? strndup(path, last_slash - path) : strdup(path);
+}
+
+void print_progress_bar(int progress, int total, const char* input_file) {
     int bar_width = (progress * PROGRESS_BAR_WIDTH) / total;
+    
+    time_t current_time = time(NULL);
+    double elapsed_time = difftime(current_time, start_time);
+    double estimated_total_time = (elapsed_time / progress) * total;
+    double remaining_time = estimated_total_time - elapsed_time;
+
+    int elapsed_min = (int)(elapsed_time / 60);
+    int elapsed_sec = (int)(elapsed_time) % 60;
+    int remaining_min = (int)(remaining_time / 60);
+    int remaining_sec = (int)(remaining_time) % 60;
+
     printf("\r|");
     for (int i = 0; i < PROGRESS_BAR_WIDTH; i++) {
-        if (i < bar_width) printf(COLOR_FILLED "█" COLOR_RESET);
-        else printf(COLOR_RED "░" COLOR_RESET);
+        if (i < bar_width) printf("\033[32m█\033[0m");  // Green filled
+        else printf("\033[91m░\033[0m");  // Red empty
     }
-    printf("| %d/%d", progress, total);
+    printf("| %d/%d | Time elapsed: %02d:%02d | Time left: %02d:%02d | Processing: ...%s", 
+           progress, total, elapsed_min, elapsed_sec, remaining_min, remaining_sec, remove_last_slash(input_file));
     fflush(stdout);
 }
 
@@ -48,11 +72,11 @@ void create_output_directory(const char *path) {
     for (char *p = tmp + 1; *p; p++) {
         if (*p == '/') {
             *p = '\0';
-            mkdir(tmp, 0700); // create intermediate directories
+            mkdir(tmp, 0700);  // create intermediate directories
             *p = '/';
         }
     }
-    mkdir(tmp, 0700); // create final directory if it doesn't exist
+    mkdir(tmp, 0700);  // create final directory if it doesn't exist
 }
 
 int process_file(const char *input_file, const char *input_dir) {
@@ -70,31 +94,27 @@ int process_file(const char *input_file, const char *input_dir) {
         relative_path++;
     }
 
-    char date_dir[1024];
-    strncpy(date_dir, relative_path, sizeof(date_dir) - 1);
-    date_dir[sizeof(date_dir) - 1] = '\0';
-    char *slash_pos = strchr(date_dir, '/');
-    if (slash_pos) {
-        *slash_pos = '\0';
-    }
+    // char date_dir[1024];
+    // strncpy(date_dir, relative_path, sizeof(date_dir) - 1);
+    // date_dir[sizeof(date_dir) - 1] = '\0';
+    // char *slash_pos = strchr(date_dir, '/');
+    // if (slash_pos) {
+    //     *slash_pos = '\0';
+    // }
+
+    const char* last_slash = strrchr(relative_path, '/');
+    last_slash++;
+    const char* date_dir = strndup(last_slash, 8);
 
     char output_dir_path[1028];
     snprintf(output_dir_path, sizeof(output_dir_path), "%s/%s", output_dir, date_dir);
 
     // Ensure all intermediate directories in the output path are created
-    char tmp[1024];
-    snprintf(tmp, sizeof(tmp), "%s", output_dir_path);
-    for (char *p = tmp + 1; *p; p++) {
-        if (*p == '/') {
-            *p = '\0';
-            mkdir(tmp, 0700);  // create intermediate directories
-            *p = '/';
-        }
-    }
-    mkdir(tmp, 0700);  // create the final directory if it doesn't exist
+    create_output_directory(output_dir_path);
 
     char output_file[1032];
     snprintf(output_file, sizeof(output_file), "%s/%s", output_dir_path, basename(strdup(input_file)));
+
 
     // Replace .dat extension with .txt
     char *dat_extension = strstr(output_file, ".dat");
@@ -121,19 +141,48 @@ int process_file(const char *input_file, const char *input_dir) {
     return 0;
 }
 
-void *thread_process_file(void *arg) {
-    FileTask *task = (FileTask *)arg;
-    process_file(task->input_file, task->input_dir);
-
-    pthread_mutex_lock(&progress_mutex);
-    processed_files++;
-    if (processed_files % 200 == 0 || processed_files == total_files) {  // Update progress every 10 files
-        print_progress_bar(processed_files, total_files);
+void enqueue_task(FileTask *task) {
+    pthread_mutex_lock(&queue_mutex);
+    while (queue_count >= MAX_QUEUE_SIZE) {
+        pthread_cond_wait(&queue_cond, &queue_mutex);
     }
-    pthread_mutex_unlock(&progress_mutex);
+    task_queue[queue_back] = task;
+    queue_back = (queue_back + 1) % MAX_QUEUE_SIZE;
+    queue_count++;
+    pthread_cond_signal(&queue_cond);
+    pthread_mutex_unlock(&queue_mutex);
+}
 
-    free((void *)task->input_file);
-    free(task);
+FileTask *dequeue_task() {
+    pthread_mutex_lock(&queue_mutex);
+    while (queue_count == 0) {
+        pthread_cond_wait(&queue_cond, &queue_mutex);
+    }
+    FileTask *task = task_queue[queue_front];
+    queue_front = (queue_front + 1) % MAX_QUEUE_SIZE;
+    queue_count--;
+    pthread_cond_signal(&queue_cond);
+    pthread_mutex_unlock(&queue_mutex);
+    return task;
+}
+
+void *worker_thread(void *arg) {
+    while (1) {
+        FileTask *task = dequeue_task();
+        if (task == NULL) break;
+
+        process_file(task->input_file, task->input_dir);
+        
+        pthread_mutex_lock(&progress_mutex);
+        processed_files++;
+        if (processed_files % 200 == 0 || processed_files == total_files) {
+            print_progress_bar(processed_files, total_files, task->input_file);
+        }
+        pthread_mutex_unlock(&progress_mutex);
+
+        free((void *)task->input_file);
+        free(task);
+    }
     return NULL;
 }
 
@@ -159,70 +208,60 @@ void count_files(const char *dir_path) {
     closedir(dir);
 }
 
-void traverse_directory(const char *dir_path, const char *input_dir, pthread_t *threads, int max_threads) {
+void traverse_directory(const char *dir_path, const char *input_dir) {
     DIR *dir = opendir(dir_path);
     if (!dir) return;
 
     struct dirent *entry;
     char path[1024];
-    int thread_count = 0;
 
     while ((entry = readdir(dir)) != NULL) {
         if (entry->d_type == DT_DIR) {
             if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
             snprintf(path, sizeof(path), "%s/%s", dir_path, entry->d_name);
-            traverse_directory(path, input_dir, threads, max_threads);
+            traverse_directory(path, input_dir);
         } else if (strstr(entry->d_name, ".dat")) {
             snprintf(path, sizeof(path), "%s/%s", dir_path, entry->d_name);
 
             FileTask *task = malloc(sizeof(FileTask));
-            if (task == NULL) {
-                perror("Failed to allocate memory for task");
-                continue;
-            }
             task->input_file = strdup(path);
             task->input_dir = input_dir;
 
-            if (pthread_create(&threads[thread_count++], NULL, thread_process_file, task) != 0) {
-                perror("Failed to create thread");
-                free(task);
-            }
-
-            if (thread_count >= max_threads) {
-                for (int i = 0; i < thread_count; i++) {
-                    pthread_join(threads[i], NULL);
-                }
-                thread_count = 0;
-            }
+            enqueue_task(task);
         }
     }
     closedir(dir);
-
-    for (int i = 0; i < thread_count; i++) {
-        pthread_join(threads[i], NULL);
-    }
 }
 
 int main() {
-    const char *input_dir = "/mnt/e/POLISH_DATA/Raw_Data/Polish_Data_winter_22";
     printf("Counting files...\n");
     count_files(input_dir);
     if (total_files == 0) {
         printf("No .dat files found.\n");
         return 0;
     }
-    printf("Total files are: %d\n", total_files);
+    printf("Total files: %d\n", total_files);
 
     int max_threads = sysconf(_SC_NPROCESSORS_ONLN);
     if (max_threads < 1) max_threads = 1;
     printf("Using %d out of %d threads.\n", max_threads - 2, max_threads);
 
-    clock_t start = clock();
-    pthread_t threads[max_threads];
-    traverse_directory(input_dir, input_dir, threads, max_threads - 2);
-    clock_t end = clock();
-    double time_taken = (double)(end - start) / CLOCKS_PER_SEC;
+    start_time = time(NULL); 
 
-    printf("\nProcessing complete. Time taken: %f seconds\n", time_taken);
+    pthread_t threads[max_threads - 2];
+    for (int i = 0; i < max_threads - 2; i++) {
+        pthread_create(&threads[i], NULL, worker_thread, NULL);
+    }
+
+    traverse_directory(input_dir, input_dir);
+
+    for (int i = 0; i < max_threads - 2; i++) {
+        enqueue_task(NULL); // Signal termination to worker threads
+    }
+    for (int i = 0; i < max_threads - 2; i++) {
+        pthread_join(threads[i], NULL);
+    }
+
+    printf("\nProcessing complete.\n");
     return 0;
 }
