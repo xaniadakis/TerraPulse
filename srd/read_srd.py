@@ -7,6 +7,7 @@ from scipy import signal
 import matplotlib.pyplot as plt
 import io
 import zstandard as zstd
+import time
 
 def get_srd_info(fn):
     """
@@ -104,6 +105,7 @@ def read_srd_file(fn):
 
     # Call get_srd_info to extract metadata
     t, fs, ch, vb, ok = get_srd_info(fn)
+    print(f"Battery voltage: {vb}\n")
     if not ok or fs <= 0:
         return t, fs, x, y
 
@@ -214,7 +216,12 @@ def print_srd_data(fn):
     """
     # Get metadata and data from the file
     downsampling_factor = 24
+
+    start_reading = time.time()
     t, fs, x, y = read_srd_file(fn)
+    reading_time = time.time() - start_reading
+    print(f"Time to read srd: {reading_time:.4f} seconds")
+    
     HNS_downsampled, HEW_downsampled = decimate_signal(x, y, downsampling_factor)
     decimated_frequency = fs / downsampling_factor
     # plot_PSD(f, S_NS, S_EW)
@@ -234,7 +241,7 @@ def print_srd_data(fn):
 
     plot_signal(HNS_downsampled, [], decimated_frequency, t)
     S_NS, S_EW, f = compute_PSD(HNS_downsampled, [], decimated_frequency, 3, 48)
-    plot_PSD(f, S_NS, S_EW)
+    # plot_PSD(f, S_NS, S_EW)
 
     # Save the data in .zst format to a buffer
     buffer = io.BytesIO()
@@ -274,8 +281,9 @@ def select_and_print_srd_data():
 
     # Open a file dialog to select the SRD file
     file_path = filedialog.askopenfilename(
+        initialdir="/mnt/e/KalpakiSortedData/", 
         title="Select an SRD File",
-        filetypes=[("SRD Files", "*.srd"), ("All Files", "*.*")]
+        filetypes=[("SRD Files", "*.SRD"), ("All Files", "*.*")]
     )
 
     # Check if a file was selected
