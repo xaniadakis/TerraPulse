@@ -19,14 +19,13 @@ double datenum(int year, int month, int day, int hour, int min, int sec) {
     t.tm_hour = hour;
     t.tm_min = min;
     t.tm_sec = sec;
-    return (double)timegm(&t) / 86400.0 + 719529.0;  // timegm used for UTC conversion
+    return (double)timegm(&t) / 86400.0 + 719529.0;  // timegm for UTC conversion
 }
 
 void format_date(double dt, char *buffer, size_t buffer_size) {
-    time_t raw_time = (time_t)((dt - 719529) * 86400);  // Convert MATLAB datenum to Unix time
-    struct tm *timeinfo = gmtime(&raw_time);  // Convert to UTC time structure
-
-    strftime(buffer, buffer_size, "%d %b %Y %H:%M:%S", timeinfo);  // Format the date
+    time_t raw_time = (time_t)((dt - 719529) * 86400);
+    struct tm *timeinfo = gmtime(&raw_time);
+    strftime(buffer, buffer_size, "%d %b %Y %H:%M:%S", timeinfo);
 }
 
 SrdInfo get_srd_info(const char *fname) {
@@ -72,11 +71,19 @@ SrdInfo get_srd_info(const char *fname) {
     }
 
     fseek(fp, 15, SEEK_SET);
-    fread(&info.fs, sizeof(float), 1, fp);
+    float fs_value;
+    fread(&fs_value, sizeof(float), 1, fp);
+    info.fs = fs_value;
+
     fseek(fp, 19, SEEK_SET);
-    fread(&info.ch, sizeof(uint8_t), 1, fp);
+    uint8_t ch_value;
+    fread(&ch_value, sizeof(uint8_t), 1, fp);
+    info.ch = ch_value;
+
     fseek(fp, 20, SEEK_SET);
-    fread(&info.vbat, sizeof(float), 1, fp);
+    float vbat_value;
+    fread(&vbat_value, sizeof(float), 1, fp);
+    info.vbat = vbat_value;
 
     info.ok = 1;
     fclose(fp);
@@ -96,7 +103,7 @@ int main(int argc, char *argv[]) {
         printf("Date: %s\n", date_str);
         printf("Sample Rate: %lf\n", info.fs);
         printf("Channel: %d\n", info.ch);
-        printf("Battery Voltage: %f\n", info.vbat);
+        printf("Battery Voltage (vbat): %e\n", info.vbat);  // Print `vbat` in scientific notation
     } else {
         printf("Failed to read SRD info.\n");
     }
