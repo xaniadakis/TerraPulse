@@ -19,7 +19,7 @@ double datenum(int year, int month, int day, int hour, int min, int sec) {
     t.tm_hour = hour;
     t.tm_min = min;
     t.tm_sec = sec;
-    return (double)mktime(&t) / 86400.0 + 719529.0;
+    return (double)timegm(&t) / 86400.0 + 719529.0;  // timegm used for UTC conversion
 }
 
 void format_date(double dt, char *buffer, size_t buffer_size) {
