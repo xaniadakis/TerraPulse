@@ -14,6 +14,8 @@
 #define PROGRESS_BAR_WIDTH 80
 #define DOWNSAMPLING_FACTOR 30
 #define MAX_QUEUE_SIZE 1000
+#define MAX_MISSING_FILES 288
+#define MAX_DIRECTORIES 1024
 
 pthread_mutex_t progress_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t queue_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -37,6 +39,9 @@ typedef struct {
     const char *missing_files[MAX_MISSING_FILES];
     int missing_file_count;
 } Metadata;
+
+Metadata metadata_array[MAX_DIRECTORIES];
+int metadata_index = 0;
 
 FileTask *task_queue[MAX_QUEUE_SIZE];
 int queue_front = 0;
@@ -119,12 +124,39 @@ void count_files(const char *dir_path) {
     closedir(dir);
 }
 
+void save_metadata_for_directory(const char *output_dir_path, Metadata *metadata) {
+    char metadata_file_path[1028];
+    snprintf(metadata_file_path, sizeof(metadata_file_path), "%s/metadata.txt", output_dir_path);
+
+    FILE *file = fopen(metadata_file_path, "w");
+    if (file) {
+        fprintf(file, "Files written: %d\n", metadata->files_written);
+        fprintf(file, "Files read: %d\n", metadata->files_read);
+        fprintf(file, "Errors occurred: %d\n", metadata->errors_occurred);
+        fprintf(file, "Missing files:\n");
+
+        for (int i = 0; i < metadata->missing_file_count; i++) {
+            fprintf(file, " - %s\n", metadata->missing_files[i]);
+        }
+
+        fprintf(file, "Processing completed at: %s", ctime(&start_time));
+        fclose(file);
+    } else {
+        printf("Failed to write metadata to %s\n", metadata_file_path);
+    }
+}
+
 void traverse_directory(const char *dir_path, const char *input_dir) {
     DIR *dir = opendir(dir_path);
     if (!dir) return;
 
     struct dirent *entry;
     char path[1024];
+    Metadata *metadata = &metadata_array[metadata_index++];
+    metadata->files_written = 0;
+    metadata->files_read = 0;
+    metadata->errors_occurred = 0;
+    metadata->missing_file_count = 0;
 
     while ((entry = readdir(dir)) != NULL) {
         if (entry->d_type == DT_DIR) {
@@ -139,24 +171,14 @@ void traverse_directory(const char *dir_path, const char *input_dir) {
             task->input_dir = input_dir;
 
             enqueue_task(task);
+            metadata->files_read++;
         }
     }
     closedir(dir);
-}
 
-void create_output_directory(const char *path) {
-    char tmp[1024];
-    snprintf(tmp, sizeof(tmp), "%s", path);
-    for (char *p = tmp + 1; *p; p++) {
-        if (*p == '/') {
-            *p = '\0';
-            mkdir(tmp, 0700);  // create intermediate directories
-            *p = '/';
-        }
-    }
-    mkdir(tmp, 0700);  // create final directory if it doesn't exist
+    // Save metadata for the directory after processing its files
+    save_metadata_for_directory(dir_path, metadata);
 }
-
 
 void enqueue_task(FileTask *task) {
     pthread_mutex_lock(&queue_mutex);
@@ -183,22 +205,34 @@ FileTask *dequeue_task() {
     return task;
 }
 
-void *worker_thread(void *arg) {
-    Metadata metadata = {0, 0, 0, {NULL}, 0};  // Initialize metadata
 
+void *worker_thread(void *arg) {
     while (1) {
         FileTask *task = dequeue_task();
         if (task == NULL) break;
 
-        metadata.files_read++;
+        // Find the corresponding metadata for the directory
+        Metadata *metadata = NULL;
+        for (int i = 0; i < metadata_index; i++) {
+            if (strncmp(task->input_file, metadata_array[i].input_dir, strlen(metadata_array[i].input_dir)) == 0) {
+                metadata = &metadata_array[i];
+                break;
+            }
+        }
+        if (!metadata) {
+            printf("No metadata found for directory %s\n", task->input_dir);
+            free((void *)task->input_file);
+            free(task);
+            continue;
+        }
 
         int result = process_file(task->input_file, task->input_dir);
         if (result == 0) {
-            metadata.files_written++;
+            metadata->files_written++;
         } else {
-            metadata.errors_occurred++;
-            if (metadata.missing_file_count < MAX_MISSING_FILES) {
-                metadata.missing_files[metadata.missing_file_count++] = strdup(task->input_file);
+            metadata->errors_occurred++;
+            if (metadata->missing_file_count < MAX_MISSING_FILES) {
+                metadata->missing_files[metadata->missing_file_count++] = strdup(task->input_file);
             }
         }
 
@@ -213,8 +247,6 @@ void *worker_thread(void *arg) {
         free(task);
     }
 
-    // Save metadata file at the end of each directory processing
-    save_metadata(output_dir, &metadata);
     return NULL;
 }
 
