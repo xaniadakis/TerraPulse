@@ -30,18 +30,41 @@ typedef struct {
     const char *input_dir;
 } FileTask;
 
+typedef struct {
+    int files_written;
+    int files_read;
+    int errors_occurred;
+    const char *missing_files[MAX_MISSING_FILES];
+    int missing_file_count;
+} Metadata;
+
 FileTask *task_queue[MAX_QUEUE_SIZE];
 int queue_front = 0;
 int queue_back = 0;
 int queue_count = 0;
 
-char* remove_last_slash(const char* path){
-    if(strncmp(path, input_dir, strlen(input_dir))==0){
-        path += strlen(input_dir);
+void save_metadata(const char *output_dir_path, Metadata *metadata) {
+    char metadata_file_path[1028];
+    snprintf(metadata_file_path, sizeof(metadata_file_path), "%s/metadata.txt", output_dir_path);
+
+    FILE *file = fopen(metadata_file_path, "w");
+    if (file) {
+        fprintf(file, "Files written: %d\n", metadata->files_written);
+        fprintf(file, "Files read: %d\n", metadata->files_read);
+        fprintf(file, "Errors occurred: %d\n", metadata->errors_occurred);
+        fprintf(file, "Missing files:\n");
+
+        for (int i = 0; i < metadata->missing_file_count; i++) {
+            fprintf(file, " - %s\n", metadata->missing_files[i]);
+        }
+
+        fprintf(file, "Processing completed at: %s", ctime(&start_time));
+        fclose(file);
+    } else {
+        printf("Failed to write metadata to %s\n", metadata_file_path);
     }
-    const char* last_slash = strrchr(path, '/');
-    return last_slash ? strndup(path, last_slash - path) : strdup(path);
 }
+
 
 void print_progress_bar(int progress, int total, const char* input_file) {
     int bar_width = (progress * PROGRESS_BAR_WIDTH) / total;
@@ -66,124 +89,12 @@ void print_progress_bar(int progress, int total, const char* input_file) {
     fflush(stdout);
 }
 
-void create_output_directory(const char *path) {
-    char tmp[1024];
-    snprintf(tmp, sizeof(tmp), "%s", path);
-    for (char *p = tmp + 1; *p; p++) {
-        if (*p == '/') {
-            *p = '\0';
-            mkdir(tmp, 0700);  // create intermediate directories
-            *p = '/';
-        }
+char* remove_last_slash(const char* path){
+    if(strncmp(path, input_dir, strlen(input_dir))==0){
+        path += strlen(input_dir);
     }
-    mkdir(tmp, 0700);  // create final directory if it doesn't exist
-}
-
-int process_file(const char *input_file, const char *input_dir) {
-    int *HNS = NULL, *HEW = NULL, nr = 0;
-    if (read_dat_file(input_file, &HNS, &HEW, &nr) != 0) {
-        printf("Something went wrong while reading file: %s\n", input_file);
-        return 1;
-    }
-
-    double *calibrated_HNS = NULL, *calibrated_HEW = NULL;
-    calibrate_HYL(HNS, HEW, nr, &calibrated_HNS, &calibrated_HEW);
-
-    const char *relative_path = input_file + strlen(input_dir);
-    if (relative_path[0] == '/' || relative_path[0] == '\\') {
-        relative_path++;
-    }
-
-    // char date_dir[1024];
-    // strncpy(date_dir, relative_path, sizeof(date_dir) - 1);
-    // date_dir[sizeof(date_dir) - 1] = '\0';
-    // char *slash_pos = strchr(date_dir, '/');
-    // if (slash_pos) {
-    //     *slash_pos = '\0';
-    // }
-
-    const char* last_slash = strrchr(relative_path, '/');
-    last_slash++;
-    const char* date_dir = strndup(last_slash, 8);
-
-    char output_dir_path[1028];
-    snprintf(output_dir_path, sizeof(output_dir_path), "%s/%s", output_dir, date_dir);
-
-    // Ensure all intermediate directories in the output path are created
-    create_output_directory(output_dir_path);
-
-    char output_file[1032];
-    snprintf(output_file, sizeof(output_file), "%s/%s", output_dir_path, basename(strdup(input_file)));
-
-
-    // Replace .dat extension with .txt
-    char *dat_extension = strstr(output_file, ".dat");
-    if (dat_extension) {
-        strcpy(dat_extension, ".txt");
-    }
-
-    int downsampled_length = nr / DOWNSAMPLING_FACTOR;
-    double *downsampled_HNS = (double *) malloc(downsampled_length * sizeof(double));
-    double *downsampled_HEW = (double *) malloc(downsampled_length * sizeof(double));
-
-    downsample_signal(calibrated_HNS, downsampled_HNS, downsampled_length);
-    downsample_signal(calibrated_HEW, downsampled_HEW, downsampled_length);
-
-    save_signals(downsampled_HNS, downsampled_HEW, NULL, NULL, NULL, downsampled_length, output_file);
-
-    free(HNS);
-    free(HEW);
-    free(calibrated_HNS);
-    free(calibrated_HEW);
-    free(downsampled_HNS);
-    free(downsampled_HEW);
-
-    return 0;
-}
-
-void enqueue_task(FileTask *task) {
-    pthread_mutex_lock(&queue_mutex);
-    while (queue_count >= MAX_QUEUE_SIZE) {
-        pthread_cond_wait(&queue_cond, &queue_mutex);
-    }
-    task_queue[queue_back] = task;
-    queue_back = (queue_back + 1) % MAX_QUEUE_SIZE;
-    queue_count++;
-    pthread_cond_signal(&queue_cond);
-    pthread_mutex_unlock(&queue_mutex);
-}
-
-FileTask *dequeue_task() {
-    pthread_mutex_lock(&queue_mutex);
-    while (queue_count == 0) {
-        pthread_cond_wait(&queue_cond, &queue_mutex);
-    }
-    FileTask *task = task_queue[queue_front];
-    queue_front = (queue_front + 1) % MAX_QUEUE_SIZE;
-    queue_count--;
-    pthread_cond_signal(&queue_cond);
-    pthread_mutex_unlock(&queue_mutex);
-    return task;
-}
-
-void *worker_thread(void *arg) {
-    while (1) {
-        FileTask *task = dequeue_task();
-        if (task == NULL) break;
-
-        process_file(task->input_file, task->input_dir);
-        
-        pthread_mutex_lock(&progress_mutex);
-        processed_files++;
-        if (processed_files % 200 == 0 || processed_files == total_files) {
-            print_progress_bar(processed_files, total_files, task->input_file);
-        }
-        pthread_mutex_unlock(&progress_mutex);
-
-        free((void *)task->input_file);
-        free(task);
-    }
-    return NULL;
+    const char* last_slash = strrchr(path, '/');
+    return last_slash ? strndup(path, last_slash - path) : strdup(path);
 }
 
 void count_files(const char *dir_path) {
@@ -231,6 +142,141 @@ void traverse_directory(const char *dir_path, const char *input_dir) {
         }
     }
     closedir(dir);
+}
+
+void create_output_directory(const char *path) {
+    char tmp[1024];
+    snprintf(tmp, sizeof(tmp), "%s", path);
+    for (char *p = tmp + 1; *p; p++) {
+        if (*p == '/') {
+            *p = '\0';
+            mkdir(tmp, 0700);  // create intermediate directories
+            *p = '/';
+        }
+    }
+    mkdir(tmp, 0700);  // create final directory if it doesn't exist
+}
+
+
+void enqueue_task(FileTask *task) {
+    pthread_mutex_lock(&queue_mutex);
+    while (queue_count >= MAX_QUEUE_SIZE) {
+        pthread_cond_wait(&queue_cond, &queue_mutex);
+    }
+    task_queue[queue_back] = task;
+    queue_back = (queue_back + 1) % MAX_QUEUE_SIZE;
+    queue_count++;
+    pthread_cond_signal(&queue_cond);
+    pthread_mutex_unlock(&queue_mutex);
+}
+
+FileTask *dequeue_task() {
+    pthread_mutex_lock(&queue_mutex);
+    while (queue_count == 0) {
+        pthread_cond_wait(&queue_cond, &queue_mutex);
+    }
+    FileTask *task = task_queue[queue_front];
+    queue_front = (queue_front + 1) % MAX_QUEUE_SIZE;
+    queue_count--;
+    pthread_cond_signal(&queue_cond);
+    pthread_mutex_unlock(&queue_mutex);
+    return task;
+}
+
+void *worker_thread(void *arg) {
+    Metadata metadata = {0, 0, 0, {NULL}, 0};  // Initialize metadata
+
+    while (1) {
+        FileTask *task = dequeue_task();
+        if (task == NULL) break;
+
+        metadata.files_read++;
+
+        int result = process_file(task->input_file, task->input_dir);
+        if (result == 0) {
+            metadata.files_written++;
+        } else {
+            metadata.errors_occurred++;
+            if (metadata.missing_file_count < MAX_MISSING_FILES) {
+                metadata.missing_files[metadata.missing_file_count++] = strdup(task->input_file);
+            }
+        }
+
+        pthread_mutex_lock(&progress_mutex);
+        processed_files++;
+        if (processed_files % 200 == 0 || processed_files == total_files) {
+            print_progress_bar(processed_files, total_files, task->input_file);
+        }
+        pthread_mutex_unlock(&progress_mutex);
+
+        free((void *)task->input_file);
+        free(task);
+    }
+
+    // Save metadata file at the end of each directory processing
+    save_metadata(output_dir, &metadata);
+    return NULL;
+}
+
+int process_file(const char *input_file, const char *input_dir) {
+    int *HNS = NULL, *HEW = NULL, nr = 0;
+    if (read_dat_file(input_file, &HNS, &HEW, &nr) != 0) {
+        printf("Something went wrong while reading file: %s\n", input_file);
+        return 1;
+    }
+
+    double *calibrated_HNS = NULL, *calibrated_HEW = NULL;
+    calibrate_HYL(HNS, HEW, nr, &calibrated_HNS, &calibrated_HEW);
+
+    const char *relative_path = input_file + strlen(input_dir);
+    if (relative_path[0] == '/' || relative_path[0] == '\\') {
+        relative_path++;
+    }
+
+    // char date_dir[1024];
+    // strncpy(date_dir, relative_path, sizeof(date_dir) - 1);
+    // date_dir[sizeof(date_dir) - 1] = '\0';
+    // char *slash_pos = strchr(date_dir, '/');
+    // if (slash_pos) {
+    //     *slash_pos = '\0';
+    // }
+
+    const char* last_slash = strrchr(relative_path, '/');
+    last_slash++;
+    const char* date_dir = strndup(last_slash, 8);
+
+    char output_dir_path[1028];
+    snprintf(output_dir_path, sizeof(output_dir_path), "%s/%s", output_dir, date_dir);
+
+    // Ensure all intermediate directories in the output path are created
+    create_output_directory(output_dir_path);
+
+    char output_file[1032];
+    snprintf(output_file, sizeof(output_file), "%s/%s", output_dir_path, basename(strdup(input_file)));
+
+    // Replace .dat extension with .txt
+    char *dat_extension = strstr(output_file, ".dat");
+    if (dat_extension) {
+        strcpy(dat_extension, ".txt");
+    }
+
+    int downsampled_length = nr / DOWNSAMPLING_FACTOR;
+    double *downsampled_HNS = (double *) malloc(downsampled_length * sizeof(double));
+    double *downsampled_HEW = (double *) malloc(downsampled_length * sizeof(double));
+
+    downsample_signal(calibrated_HNS, downsampled_HNS, downsampled_length);
+    downsample_signal(calibrated_HEW, downsampled_HEW, downsampled_length);
+
+    save_signals(downsampled_HNS, downsampled_HEW, NULL, NULL, NULL, downsampled_length, output_file);
+
+    free(HNS);
+    free(HEW);
+    free(calibrated_HNS);
+    free(calibrated_HEW);
+    free(downsampled_HNS);
+    free(downsampled_HEW);
+
+    return 0;
 }
 
 int main() {
