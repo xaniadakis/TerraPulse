@@ -1,5 +1,7 @@
 *.dat
 /venv/
-/build/
+*/build/
 *.o
 /matlab/resources/
+*output/
+

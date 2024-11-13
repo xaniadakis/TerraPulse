@@ -189,7 +189,7 @@ void find_modes(double *signal, int length, double sampling_frequency, double mi
     free(modes_amplitude);
 }
 
-void downsample_signal(double *input_signal, double *downsampled_signal, int downsampled_length) {
+void downsample_dat_signal(double *input_signal, double *downsampled_signal, int downsampled_length) {
     for (int i = 0; i < downsampled_length; i++) {
         double avg_value = 0.0;
 
@@ -199,4 +199,51 @@ void downsample_signal(double *input_signal, double *downsampled_signal, int dow
         avg_value /= DOWNSAMPLING_FACTOR;
         downsampled_signal[i] = avg_value;
     }
+}
+
+// Downsample signal by averaging and save to a file
+// void downsample_srd_signal(SrdData data, int downsample_factor, const char *filename) {
+//     int num_channels = 2;
+//     int samples_per_channel = data.N / num_channels;
+//     int new_size = samples_per_channel / downsample_factor;
+
+//     FILE *file = fopen(filename, "w");
+//     if (file == NULL) {
+//         fprintf(stderr, "Failed to open file \"%s\" for writing\n", filename);
+//         return;
+//     }
+
+//     for (int i = 0; i < new_size; i++) {
+//         double sum_ch1 = 0.0;
+//         double sum_ch2 = 0.0;
+
+//         for (int j = 0; j < downsample_factor; j++) {
+//             sum_ch1 += data.x[(i * downsample_factor + j) * num_channels];
+//             sum_ch2 += data.x[(i * downsample_factor + j) * num_channels + 1];
+//         }
+
+//         double avg_ch1 = sum_ch1 / downsample_factor;
+//         double avg_ch2 = sum_ch2 / downsample_factor;
+//         fprintf(file, "%lf %lf\n", avg_ch1, avg_ch2);
+//     }
+
+//     fclose(file);
+// }
+
+void downsample_srd_signal(SrdData data, int downsample_factor, const char *filename) {
+    int new_size = data.N / downsample_factor;
+    FILE *file = fopen(filename, "w");
+    if (file == NULL) {
+        fprintf(stderr, "Failed to open file \"%s\" for writing\n", filename);
+        return;
+    }
+    for (int i = 0; i < new_size; i++) {
+        double sum = 0.0;
+        for (int j = 0; j < downsample_factor; j++) {
+            sum += data.x[i * downsample_factor + j];
+        }
+        double avg = sum / downsample_factor;
+        fprintf(file, "%lf\n", avg);
+    }
+    fclose(file);
 }

@@ -81,7 +81,7 @@ def generate_spectrogram_from_zst_files(directory, days=1, minutes_per_file=5, d
     start_time = time.time()
     time_points = []
     total_files = (days * 24 * 60) // minutes_per_file
-    print(f'Will read {total_files} total zst files')
+    print(f'Will read {total_files} total zst files from {directory}')
 
     # Recursively collect all .zst files from the directory structure
     zst_files = []
@@ -97,6 +97,9 @@ def generate_spectrogram_from_zst_files(directory, days=1, minutes_per_file=5, d
     if zst_files:
         print(f"First .zst file: {zst_files[0]}")
         print(f"Last .zst file: {zst_files[-1]}")
+    else:
+        print("No zst files found.")
+        exit(1)
 
     # Determine start and end dates
     start_date_str = zst_files[0].split(os.sep)[-1].split('.')[0]  # Extract the date from the filename
@@ -113,18 +116,24 @@ def generate_spectrogram_from_zst_files(directory, days=1, minutes_per_file=5, d
 
     frequencies = results[0][0]
     psd_NS_list = [result[1] for result in results]
+    psd_EW_list = [result[1] for result in results]
     time_points = [i * minutes_per_file / 60.0 for i in range(len(results))]
 
     matrix_start_time = time.time()
     psd_NS_matrix = np.memmap('/tmp/psd_ns_matrix.dat', dtype='float32', mode='w+', shape=(len(frequencies), len(psd_NS_list)))
+    psd_EW_matrix = np.memmap('/tmp/psd_ew_matrix.dat', dtype='float32', mode='w+', shape=(len(frequencies), len(psd_EW_list)))
     for i, S_NS in enumerate(psd_NS_list):
         psd_NS_matrix[:, i] = S_NS
     psd_NS_matrix.flush()
+    for i, S_EW in enumerate(psd_EW_list):
+        psd_EW_matrix[:, i] = S_EW
+    psd_EW_matrix.flush()
     print(f"Matrix creation and memory mapping time: {time.time() - matrix_start_time:.2f} seconds")
-
     create_dir_if_not_exists(f'{directory}/spectograms')
     plot_spectrogram(psd_NS_matrix, frequencies, time_points, start_date, end_date,
-                     output_filename=f"{directory}/spectograms/{days}_days_spectrogram.png", downsample_factor=downsample_factor, days=days)
+                     output_filename=f"{directory}/spectograms/NS_{days}_days_spectrogram.png", downsample_factor=downsample_factor, days=days)
+    plot_spectrogram(psd_EW_matrix, frequencies, time_points, start_date, end_date,
+                     output_filename=f"{directory}/spectograms/EW_{days}_days_spectrogram.png", downsample_factor=downsample_factor, days=days)
     print(f"Total time: {time.time() - start_time:.2f} seconds")
 
 # Command-line interface

@@ -296,8 +296,8 @@ int process_file(const char *input_file, const char *input_dir) {
     double *downsampled_HNS = (double *) malloc(downsampled_length * sizeof(double));
     double *downsampled_HEW = (double *) malloc(downsampled_length * sizeof(double));
 
-    downsample_signal(calibrated_HNS, downsampled_HNS, downsampled_length);
-    downsample_signal(calibrated_HEW, downsampled_HEW, downsampled_length);
+    downsample_dat_signal(calibrated_HNS, downsampled_HNS, downsampled_length);
+    downsample_dat_signal(calibrated_HEW, downsampled_HEW, downsampled_length);
 
     save_signals(downsampled_HNS, downsampled_HEW, NULL, NULL, NULL, downsampled_length, output_file);
 

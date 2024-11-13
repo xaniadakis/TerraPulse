@@ -113,13 +113,13 @@ def process_files_in_directory(input_directory, frequency, fmin, fmax):
         all_txt_files.extend([os.path.join(root, os.path.splitext(f)[0]) for f in txt_files])
 
     # Create a single progress bar for all files
-    with tqdm(total=len(all_txt_files), unit="file", bar_format='|\033[94m{bar}\033[0m| {percentage:3.0f}%', ncols=107) as pbar:
+    with tqdm(total=len(all_txt_files), unit="file", bar_format='|\033[94m{bar}\033[0m| {percentage:3.0f}%', ncols=107, leave=False) as pbar:
         for input_filename in all_txt_files:
             transform_signal(input_filename, frequency, fmin, fmax, False)
             pbar.update(1)
 
 if __name__ == "__main__":
-    input_directory = "./output/"  # Root directory containing all date subdirectories
+    input_directory = "../output/"  # Root directory containing all date subdirectories
     downsampling_factor = 30
     frequency = 5e6 / 128 / 13 / downsampling_factor
 

@@ -3,13 +3,26 @@ import matplotlib.pyplot as plt
 import time
 import zstandard as zstd
 import io
+import os
+
+def transform_path(file_path):
+    # Extract directory and filename
+    directory, filename = os.path.split(file_path)
+    
+    # Extract the date part from the filename (first 8 characters)
+    date_part = filename[:8]
+    
+    # Create the new path with an additional directory based on the date
+    new_path = os.path.join(directory, date_part, filename)
+    return new_path
+
 
 if __name__ == "__main__":
 
     # Timing the loading process
     start_time = time.time()
     input_directory = "../output/"
-    base_filename = input_directory + "20230106"
+    base_filename = input_directory + "20211022"
 
     # Generate file names in the format HHMM from 0000 to 2355 in 5-minute increments
     files = []
@@ -56,6 +69,7 @@ if __name__ == "__main__":
 
         # Loop through the selected files and plot them
         for i, file in enumerate(files_chunk):
+            file = transform_path(file)
             print(file)
 
             # Read the compressed file
@@ -80,7 +94,7 @@ if __name__ == "__main__":
             axs[i].set_ylabel(r"$PSD\ [pT^2/Hz]$")
             axs[i].set_xlabel("Frequency [Hz]")
             axs[i].set_xlim([0, 50])
-            # axs[i].set_ylim([0, 0.6])
+            # axs[i].set_ylim([0, 5])
             axs[i].grid(ls=':')
             axs[i].legend()
             axs[i].set_title(f"Plot for {file}")

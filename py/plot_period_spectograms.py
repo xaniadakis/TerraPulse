@@ -60,7 +60,7 @@ def load_psd_zst_file(filename):
     return npz_data['freqs'], npz_data['NS'], npz_data['EW']
 
 # Plot spectrogram with optional downsampling
-def plot_spectrogram(psd_data, frequencies, time_points, start_date, end_date, output_filename=None, downsample_factor=1, days=1):
+def plot_spectrogram(psd_data, frequencies, time_points, start_date, end_date, output_filename=None, downsample_factor=1, days=1, filetype='NS'):
     start_time = time.time()
     psd_data_db = np.where(psd_data > 0, 10 * np.log10(psd_data), -np.inf)
 
@@ -101,7 +101,7 @@ def plot_spectrogram(psd_data, frequencies, time_points, start_date, end_date, o
     else:
         plt.show()
     plt.close()
-    print(f"Plotting time: {time.time() - start_time:.2f} seconds")
+    print(f"Plotting {filetype} time: {time.time() - start_time:.2f} seconds")
 
 # Multiprocessing function for loading files
 def parallel_load_zst_files(filenames):
@@ -151,17 +151,22 @@ def split_period_into_chunks(filenames, chunk_size_hours):
 # Generate spectrogram for each sub-period
 def generate_spectrogram_from_zst_files(directory, output_directory, selected_period, downsample_factor=1, chunk_size_hours=24):
     create_dir_if_not_exists(output_directory)
+
+    # Create a subdirectory for the specific period with descriptive naming
+    period_start = datetime.strptime(selected_period[0].split(os.sep)[-1].split('.')[0], "%Y%m%d%H%M")
+    period_end = datetime.strptime(selected_period[-1].split(os.sep)[-1].split('.')[0], "%Y%m%d%H%M") + timedelta(minutes=5)
     
-    # Create a subdirectory for the specific period
-    period_start_str = selected_period[0].split(os.sep)[-1].split('.')[0]
-    period_end_str = selected_period[-1].split(os.sep)[-1].split('.')[0]
-    period_subdir = os.path.join(output_directory, f"{period_start_str}_to_{period_end_str}")
+    # Updated readable subdirectory name with 'from' and 'to'
+    period_subdir = os.path.join(output_directory, f"{period_start.strftime('%d-%m-%Y')}_to_{period_end.strftime('%d-%m-%Y')}")
+
     create_dir_if_not_exists(period_subdir)
     
     # Split the selected period into smaller chunks
     sub_periods = split_period_into_chunks(selected_period, chunk_size_hours)
     
+    counter = 0
     for i, sub_period in enumerate(sub_periods):
+        counter += 1
         print(f"Processing chunk {i + 1}/{len(sub_periods)}...")
         
         start_date_str = sub_period[0].split(os.sep)[-1].split('.')[0]
@@ -177,20 +182,42 @@ def generate_spectrogram_from_zst_files(directory, output_directory, selected_pe
 
         frequencies = results[0][0]
         psd_NS_list = [result[1] for result in results]
+        psd_EW_list = [result[1] for result in results]
         time_points = [i * 5 / 60.0 for i in range(len(results))]
 
         # Create memory-mapped matrix for plotting
         matrix_start_time = time.time()
+        
         psd_NS_matrix = np.memmap('/tmp/psd_ns_matrix.dat', dtype='float32', mode='w+', shape=(len(frequencies), len(psd_NS_list)))
         for i, S_NS in enumerate(psd_NS_list):
             psd_NS_matrix[:, i] = S_NS
         psd_NS_matrix.flush()
+    
+        psd_EW_matrix = np.memmap('/tmp/psd_ew_matrix.dat', dtype='float32', mode='w+', shape=(len(frequencies), len(psd_EW_list)))
+        for i, S_EW in enumerate(psd_EW_list):
+            psd_EW_matrix[:, i] = S_EW
+        psd_EW_matrix.flush()
+    
         print(f"Matrix creation and memory mapping time: {time.time() - matrix_start_time:.2f} seconds")
+
+        # Save each spectrogram with readable filename
+        ns_output_filename = os.path.join(
+            period_subdir, 
+            f"{counter}_NSspec_{start_date.strftime('%d-%m-%Y_%H%M')}_to_{end_date.strftime('%d-%m-%Y_%H%M')}.png"
+        )
+        ew_output_filename = os.path.join(
+            period_subdir, 
+            f"{counter}_EWspec_{start_date.strftime('%d-%m-%Y_%H%M')}_to_{end_date.strftime('%d-%m-%Y_%H%M')}.png"
+        )
 
         # Plot spectrogram for this sub-period
         plot_spectrogram(psd_NS_matrix, frequencies, time_points, start_date, end_date,
-                         output_filename=f"{period_subdir}/{start_date.strftime('%Y%m%d%H%M')}_to_{end_date.strftime('%Y%m%d%H%M')}_spectrogram.png",
-                         downsample_factor=downsample_factor)
+                         output_filename=ns_output_filename,
+                         downsample_factor=downsample_factor, filetype='NS')
+        
+        plot_spectrogram(psd_EW_matrix, frequencies, time_points, start_date, end_date,
+                         output_filename=ew_output_filename,
+                         downsample_factor=downsample_factor, filetype='EW')
 
 # Command-line interface
 if __name__ == "__main__":
