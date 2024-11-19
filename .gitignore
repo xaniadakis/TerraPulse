@@ -3,5 +3,5 @@
 */build/
 *.o
 /matlab/resources/
-*output/
+*output*/
 
