@@ -11,6 +11,7 @@ from scipy.interpolate import interp1d
 from scipy.optimize import curve_fit
 import traceback
 import datetime
+from scipy.optimize import leastsq
 
 NUM_HARMONICS = 7  # Define the number of harmonics expected
 FMIN = 3
@@ -746,6 +747,62 @@ def gaussian_weights(f, mean, std, scale_factor=1.0):
     # Apply the scaling factor
     return scale_factor * weights
 
+def residuals(params, f, p_in, func, weights):
+    """
+    Calculate the weighted residuals for leastsq.
+    """
+    return (func(f, *params) - p_in) * weights
+
+def chi_squared(y_obs, y_model, weights):
+    """
+    Calculate Chi-squared statistic.
+    """
+    return np.sum(((y_obs - y_model) ** 2) / weights**2)
+
+def r_squared(y_obs, y_model):
+    """
+    Calculate R-squared.
+    """
+    ss_res = np.sum((y_obs - y_model) ** 2)
+    ss_tot = np.sum((y_obs - np.mean(y_obs)) ** 2)
+    return 1 - (ss_res / ss_tot)
+
+import numpy as np
+
+def rate_fit(chi2, r2, n, p, chi2_weight=0.5, r2_weight=0.5):
+    """
+    Rate the fit from 0 to 100 based on Chi-squared and R-squared.
+    
+    Args:
+    chi2 (float): The chi-squared statistic.
+    r2 (float): The R-squared value.
+    n (int): The number of data points.
+    p (int): The number of parameters in the model.
+    chi2_weight (float): The weight for the Chi-squared metric (between 0 and 1).
+    r2_weight (float): The weight for the R-squared metric (between 0 and 1).
+    
+    Returns:
+    float: The fit rating between 0 and 100.
+    """
+    
+    # Degrees of freedom
+    dof = n - p
+    
+    # Normalize Chi-squared: We want a value near 1 for a good fit, so we scale it
+    # Higher values of chi2 are worse, so we inverse the scaling (1 / (chi2 + 1)) to make it range between 0 and 1.
+    chi2_normalized = 1 / (1 + chi2 / dof)
+    
+    # R-squared is already between 0 and 1, so we use it as is.
+    r2_normalized = r2  # Since R^2 is between 0 and 1, we can use it directly.
+    
+    # Combine the two metrics to get a final score between 0 and 1
+    final_score = (chi2_weight * chi2_normalized) + (r2_weight * r2_normalized)
+    
+    # Convert the score to a scale from 0 to 100
+    fit_rating = final_score * 100
+    
+    return fit_rating
+
 def sr_fit(f, p_in, modes):
     f_res = np.array([7.8, 14, 20, 27, 33, 39, 45])[:modes]
     ainits = [np.mean(p_in[(f > freq - 0.5) & (f < freq + 0.5)]) for freq in f_res]
@@ -768,11 +825,20 @@ def sr_fit(f, p_in, modes):
     std_NS = np.std(f)
     weights_NS = gaussian_weights(f, mean_NS, std_NS)
 
-    # Fit the Lorentzian model to the data
-    popt, _ = curve_fit(lorentzian, f, p_in*weights_NS, p0=init_params, bounds=(lower_bounds, upper_bounds), sigma=weights_NS)
-    fitline = lorentzian(f, *popt)
-    noiseline = popt[-1]
-    results = np.reshape(popt[:-1], (modes, 3))
+    # Use leastsq for fitting
+    params, _ = leastsq(residuals, init_params, args=(f, p_in * weights_NS, lorentzian, weights_NS))
+
+    # Extract the fitted values
+    fitline = lorentzian(f, *params)
+    noiseline = params[-1]
+    results = np.reshape(params[:-1], (modes, 3))
+
+    # Calculate the fit rating from 0 to 100
+    fit_rating = rate_fit(chi_squared(p_in, fitline, weights_NS), 
+                          r_squared(p_in, fitline), len(f), len(params), 
+                          chi2_weight=0.5, r2_weight=0.5)
+    
+    print(f"Fit rating: {fit_rating:.2f}")
 
     return fitline, noiseline, results, None  # gof (goodness of fit) is not implemented
 
