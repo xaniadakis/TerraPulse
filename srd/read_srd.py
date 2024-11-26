@@ -9,6 +9,8 @@ import io
 import zstandard as zstd
 import time
 from scipy.interpolate import interp1d
+from scipy.signal import welch, windows
+from scipy.optimize import curve_fit
 
 new_logger_fact = 0.25  # New logger amp factor
 old_logger = 0  # Global variable in the original code; define as needed
@@ -210,9 +212,6 @@ def decimate_signal(HNS, HEW, downsampling_factor):
         HEW_downsampled = np.mean(HEW[:len_HEW].reshape(-1, downsampling_factor), axis=1)
 
     return HNS_downsampled, HEW_downsampled
-
-from scipy.signal import welch, windows
-from scipy.optimize import curve_fit
 
 def get_equalizer(freqs, date):
     # Define important dates
@@ -909,8 +908,6 @@ def get_res_5():
     res_coil = get_res_coil(70)
     return res_amp, res_coil
 
-from scipy.optimize import curve_fit
-
 def lorentzian(f, *params):
     """
     Lorentzian model function used for fitting.
@@ -925,6 +922,15 @@ def lorentzian(f, *params):
     result += params[-1]  # Background noise level (BN)
     return result
 
+def gaussian_weights(f, mean, std, scale_factor=1.0):
+    # Scale the width based on the data's frequency range (optional)
+    std_adjusted = std * (np.max(f) - np.min(f)) / np.std(f)
+    
+    # Compute the Gaussian weights
+    weights = np.exp(-((f - mean) ** 2) / (2 * std_adjusted ** 2))
+    
+    # Apply the scaling factor
+    return scale_factor * weights
 
 def sr_fit(f, p_in, modes):
     f_res = np.array([7.8, 14, 20, 27, 33, 39, 45])[:modes]
@@ -944,8 +950,12 @@ def sr_fit(f, p_in, modes):
     lower_bounds.append(0)  # BN lower bound
     upper_bounds.append(max(p_in))  # BN upper bound
 
+    means = np.mean(f)
+    stds = np.std(f)
+    weights = gaussian_weights(f, means, stds)
+
     # Fit the Lorentzian model to the data
-    popt, _ = curve_fit(lorentzian, f, p_in, p0=init_params, bounds=(lower_bounds, upper_bounds))
+    popt, _ = curve_fit(lorentzian, f, p_in*weights, p0=init_params, bounds=(lower_bounds, upper_bounds), sigma=weights)
     fitline = lorentzian(f, *popt)
     noiseline = popt[-1]
     results = np.reshape(popt[:-1], (modes, 3))
@@ -958,7 +968,7 @@ def srd_spec(t, fs, x, y):
 
     Pov = 50
     Tseg = 20
-    modes = 6
+    modes = 7
 
     NN = round(fs * Tseg)
     if NN >= len(x):

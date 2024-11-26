@@ -1,19 +1,24 @@
-function main(numLorentzians)
-    % Check if num_lorentzians is provided
-    if nargin < 1
-        error('You must provide the number of Lorentzians as a command-line argument.');
+function main(numLorentzians, fileSuffix, inputDir)
+    % Check if required arguments are provided
+    if nargin < 2
+        error('You must provide the number of Lorentzians and the file type as command-line arguments.');
     end
 
     % Set parameters
-    input_dir = '../output/';
+    % input_dir = '../output/';
     sampling_frequency = 5e6 / 128 / 13;
     downsampling_factor = 30;
     downsampling_rate = sampling_frequency / downsampling_factor;
 
+    % Validate the input directory
+    if ~isfolder(inputDir)
+        error('The specified input directory does not exist: %s', inputDir);
+    end
+
     % List all .txt files in the input directory
-    files = dir(fullfile(input_dir, '*.txt'));
+    files = dir(fullfile(inputDir, ['*.', fileSuffix]));
     if isempty(files)
-        error('No .txt files found in the input directory.');
+        error(['No .', fileSuffix, ' files found in the input directory: ', inputDir]);
     end
 
     i = Inf;  % Set the number of iterations you want (or the number of files to process)
@@ -26,7 +31,7 @@ function main(numLorentzians)
         fprintf(1, '\rProcessing file %d of %d (%.2f%%)', k, min(i, num_files), (k / min(i, num_files)) * 100);
         
         % Load data from the .txt file
-        input_filename = fullfile(input_dir, files(k).name);
+        input_filename = fullfile(inputDir, files(k).name);
         data = load(input_filename);  % Load the data from the file
         % data = dlmread(input_filename, '\n', 2, 0);  % Read data, skipping the first two lines
 
@@ -41,7 +46,7 @@ function main(numLorentzians)
 
         % Save fitResults in a compressed .mat file with the same name as the input .txt file
         [~, file_name, ~] = fileparts(files(k).name);  % Extract the file name without extension
-        save(fullfile(input_dir, [file_name, '.mat']), 'fitResults', '-v7.3');  % Save as compressed .mat file
+        save(fullfile(inputDir, [file_name, '.mat']), 'fitResults', '-v7.3');  % Save as compressed .mat file
     end
     toc;
     num_files

@@ -201,49 +201,51 @@ void downsample_dat_signal(double *input_signal, double *downsampled_signal, int
     }
 }
 
-// Downsample signal by averaging and save to a file
-// void downsample_srd_signal(SrdData data, int downsample_factor, const char *filename) {
-//     int num_channels = 2;
-//     int samples_per_channel = data.N / num_channels;
-//     int new_size = samples_per_channel / downsample_factor;
-
-//     FILE *file = fopen(filename, "w");
-//     if (file == NULL) {
-//         fprintf(stderr, "Failed to open file \"%s\" for writing\n", filename);
-//         return;
-//     }
-
-//     for (int i = 0; i < new_size; i++) {
-//         double sum_ch1 = 0.0;
-//         double sum_ch2 = 0.0;
-
-//         for (int j = 0; j < downsample_factor; j++) {
-//             sum_ch1 += data.x[(i * downsample_factor + j) * num_channels];
-//             sum_ch2 += data.x[(i * downsample_factor + j) * num_channels + 1];
-//         }
-
-//         double avg_ch1 = sum_ch1 / downsample_factor;
-//         double avg_ch2 = sum_ch2 / downsample_factor;
-//         fprintf(file, "%lf %lf\n", avg_ch1, avg_ch2);
-//     }
-
-//     fclose(file);
-// }
-
 void downsample_srd_signal(SrdData data, int downsample_factor, const char *filename) {
-    int new_size = data.N / downsample_factor;
+    int new_size = data.N / 1; // Total downsampled size
+    int samples_per_channel = (data.ch == 1) ? (data.N / 2) : data.N; // Per-channel samples for dual channel
+    int downsampled_samples_per_channel = samples_per_channel / downsample_factor; // Downsampled size per channel
+
     FILE *file = fopen(filename, "w");
     if (file == NULL) {
         fprintf(stderr, "Failed to open file \"%s\" for writing\n", filename);
         return;
     }
-    for (int i = 0; i < new_size; i++) {
-        double sum = 0.0;
-        for (int j = 0; j < downsample_factor; j++) {
-            sum += data.x[i * downsample_factor + j];
+
+    if (data.ch == 1) { // Dual channel
+        for (int i = 0; i < downsampled_samples_per_channel; i++) {
+            double sum_channel1 = 0.0, sum_channel2 = 0.0;
+
+            // Aggregate samples for both channels
+            for (int j = 0; j < downsample_factor; j++) {
+                sum_channel1 += data.x[i * downsample_factor + j];
+                sum_channel2 += data.y[i * downsample_factor + j];
+            }
+
+            // Compute averages
+            double avg_channel1 = sum_channel1 / downsample_factor;
+            double avg_channel2 = sum_channel2 / downsample_factor;
+
+            // Write both channels to the file
+            fprintf(file, "%lf\t%lf\n", avg_channel1, avg_channel2);
         }
-        double avg = sum / downsample_factor;
-        fprintf(file, "%lf\n", avg);
+    } else { // Single channel
+        for (int i = 0; i < new_size; i++) {
+            double sum = 0.0;
+
+            // Aggregate samples for single channel
+            for (int j = 0; j < downsample_factor; j++) {
+                sum += data.x[i * downsample_factor + j];
+            }
+
+            // Compute average
+            double avg = sum / downsample_factor;
+
+            // Write single channel data to the file
+            fprintf(file, "%lf\n", avg);
+        }
     }
+
     fclose(file);
 }
+

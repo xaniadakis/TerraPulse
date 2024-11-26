@@ -15,6 +15,7 @@
 #define DOWNSAMPLING_FACTOR 30
 #define BAR_UPDATE_FREQUENCY 5
 #define VERSION "1.0"  // Specify the version here
+#define DEBUG 0
 
 // File extensions
 #define POLSKI_LOGGER_FILE_TYPE ".dat"
@@ -95,14 +96,7 @@ void process_dat_file(const char *file_path) {
         free(HEW);
         return;
     }
-    // if(nr<900000){
-    //     struct stat st;
-    //     if (stat(file_path, &st) == 0) {
-    //         printf("\nFile: %s, %d samples, Size: %ld bytes\n", file_path, nr, st.st_size);
-    //     } else {
-    //         printf("\nFile: %s, %d samples, size=error\n", file_path, nr);
-    //     }
-    // }
+
     double *calibrated_HNS = NULL, *calibrated_HEW = NULL;
     calibrate_HYL(HNS, HEW, nr, &calibrated_HNS, &calibrated_HEW);
 
@@ -161,19 +155,28 @@ void process_srd_file(const char *file_path) {
         printf("Failed to load data.\n");
         total_files--;
         return;
-    } 
-    // else {
-    //     char date_str[30];
-    //     format_date(data.date, date_str, sizeof(date_str));
-    //     printf("Date: %s\n", date_str);
-    //     printf("Sample Rate: %lf\n", data.fs);
-    //     printf("Number of samples: %d\n", data.N);
-    //     printf("Channel Count: %s\n", data.ch == 0 ? "Single" : "Dual");
-    //     printf("Battery Voltage: %e V\n", data.vbat);
-    // }
+    } else if(DEBUG) {
+        char date_str[30];
+        format_date(data.date, date_str, sizeof(date_str));
+        printf("Date: %s | Sample Rate: %.2lf Hz | Samples: %d | Channels: %s | Battery: %.2e V\n",
+            date_str, data.fs, data.N, data.ch == 0 ? "Single" : "Dual", data.vbat);
+    }
 
-    int downsample_factor = (int)(data.fs / 100);  // Calculate downsample factor for 100 Hz
-    
+    // Determine per-channel sample count
+    int samples_per_channel = (data.ch == 1) ? (data.N / 2) : data.N;
+    // Calculate initial downsample factor for target 100 Hz
+    int downsample_factor = (int)(data.fs / 100);
+    // Adjust downsample factor to ensure integer result
+    // while (samples_per_channel % downsample_factor != 0) {
+    //     downsample_factor--;
+    // }
+    if(DEBUG){
+        int downsampled_samples_per_channel = samples_per_channel / downsample_factor;
+        int total_downsampled_samples = (data.ch == 1) ? (downsampled_samples_per_channel * 2) : downsampled_samples_per_channel;
+        printf("Downsample Factor: %d, Downsampled Samples Per Channel: %d, Total Downsampled Samples: %d\n",
+                downsample_factor, downsampled_samples_per_channel, total_downsampled_samples);
+    }
+
     char *output_path = malloc(OUTPUT_FILE_PATH_LEN);
     if (output_path == NULL) {
         printf("Output path malloc failed.\n");
@@ -261,7 +264,7 @@ void traverse_directory(const char *dir_path) {
 
 int main(int argc, char *argv[]) {
     if (argc < 4) {
-        fprintf(stderr, "Usage: %s <mode: dat|srd> <input_dir> <output_dir>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <mode: pol|hel> <input_dir> <output_dir>\n", argv[0]);
         return 1;
     }
 
@@ -274,7 +277,7 @@ int main(int argc, char *argv[]) {
     } else if (strcmp(mode_arg, "hel") == 0) {
         current_mode = POLSKI_LOGGER;
     } else {
-        fprintf(stderr, "Invalid mode. Use 'dat' or 'srd'.\n");
+        fprintf(stderr, "Invalid mode. Use 'pol' or 'hel'.\n");
         return 1;
     }
     printf("Mode: %s\n", current_mode == HELLENIC_LOGGER ? "Hellenic" : "Polski");

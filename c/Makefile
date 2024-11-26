@@ -10,7 +10,7 @@ TARGET = $(OBJDIR)/signal_to_text
 # Source and object files
 # SOURCES = $(wildcard $(SRCDIR)/*.c)
 SOURCES = $(filter-out $(SRCDIR)/p_dat_to_text.c $(SRCDIR)/srd_to_text.c, $(wildcard $(SRCDIR)/*.c))
-OBJECTS = $(patsubst $(SRCDIR)/%.c, $(OBJDIR)/%.o, $(DAT_SOURCES))
+OBJECTS = $(patsubst $(SRCDIR)/%.c, $(OBJDIR)/%.o, $(SOURCES))
 
 # Build the dat project
 all: $(TARGET)
