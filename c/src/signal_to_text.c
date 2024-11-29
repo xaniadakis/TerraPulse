@@ -245,13 +245,13 @@ void traverse_directory(const char *dir_path) {
             snprintf(path, sizeof(path), "%s/%s", dir_path, entry->d_name);
             traverse_directory(path);
         } else {
-            const char *file_type = current_mode == HELLENIC_LOGGER ? POLSKI_LOGGER_FILE_TYPE : HELLENIC_LOGGER_FILE_TYPE;
+            const char *file_type = current_mode == HELLENIC_LOGGER ? HELLENIC_LOGGER_FILE_TYPE : POLSKI_LOGGER_FILE_TYPE;
             if (strstr(entry->d_name, file_type)) {
                 snprintf(path, sizeof(path), "%s/%s", dir_path, entry->d_name);
                 if (current_mode == HELLENIC_LOGGER) {
-                    process_dat_file(path);
-                } else if (current_mode == POLSKI_LOGGER) {
                     process_srd_file(path);
+                } else if (current_mode == POLSKI_LOGGER) {
+                    process_dat_file(path);
                 } else {
                     return;
                 }
@@ -272,16 +272,16 @@ int main(int argc, char *argv[]) {
     INPUT_DIR = argv[2];
     OUTPUT_DIR = argv[3];
 
-    if (strcmp(mode_arg, "pol") == 0) {
+    if (strcmp(mode_arg, "hel") == 0) {
         current_mode = HELLENIC_LOGGER;
-    } else if (strcmp(mode_arg, "hel") == 0) {
+    } else if (strcmp(mode_arg, "pol") == 0) {
         current_mode = POLSKI_LOGGER;
     } else {
         fprintf(stderr, "Invalid mode. Use 'pol' or 'hel'.\n");
         return 1;
     }
     printf("Mode: %s\n", current_mode == HELLENIC_LOGGER ? "Hellenic" : "Polski");
-    const char *file_type = current_mode == HELLENIC_LOGGER ? POLSKI_LOGGER_FILE_TYPE : HELLENIC_LOGGER_FILE_TYPE;
+    const char *file_type = current_mode == HELLENIC_LOGGER ? HELLENIC_LOGGER_FILE_TYPE : POLSKI_LOGGER_FILE_TYPE;
 
     struct stat st;
     // Check input directory

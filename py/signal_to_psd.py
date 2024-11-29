@@ -838,9 +838,9 @@ def sr_fit(f, p_in, modes):
                           r_squared(p_in, fitline), len(f), len(params), 
                           chi2_weight=0.5, r2_weight=0.5)
     
-    print(f"Fit rating: {fit_rating:.2f}")
+    # print(f"Fit rating: {fit_rating:.2f}")
 
-    return fitline, noiseline, results, None  # gof (goodness of fit) is not implemented
+    return fitline, _, results, fit_rating  # gof (goodness of fit) is not implemented
 
 def validate_file_type(file_type):
     if file_type not in ['.pol', '.hel']:
@@ -906,9 +906,9 @@ def transform_signal(input_filename, file_extension, do_plot=False):
             timespace = np.linspace(0, len(HNS) / SAMPLING_RATE, len(HNS))
             plt.figure(figsize=(12, 8))
             plt.subplot(2, 1, 1)
-            plt.plot(timespace, HNS, 'r', lw=1, label=r'$B_{NS}$ Downsampled')
+            plt.plot(timespace, HNS, 'r', lw=1, label=r'$B_{NS}$')
             if HEW is not None:
-                plt.plot(timespace, HEW, 'b', lw=1, label=r'$B_{EW}$ Downsampled')
+                plt.plot(timespace, HEW, 'b', lw=1, label=r'$B_{EW}$')
             plt.title(f"{file_origin}-Logger Time-Domain Signal\n{formatted_datetime}")
             plt.ylabel("B [pT]")
             plt.xlabel("Time [sec]")
@@ -932,7 +932,7 @@ def transform_signal(input_filename, file_extension, do_plot=False):
         if file_origin == "Hellenic":
             sreq1, sreq2 = get_equalizer(frequencies, file_datetime)
             S_NS *= sreq1
-        L1, noiseline1, R1, gof1 = sr_fit(frequencies, S_NS, NUM_HARMONICS)
+        L1, _, R1, gof1 = sr_fit(frequencies, S_NS, NUM_HARMONICS)
 
         if HEW is not None:
             # Compute PSD for HEW if it exists
@@ -959,18 +959,22 @@ def transform_signal(input_filename, file_extension, do_plot=False):
             # Adjust S_EW depending on the file origin
             if file_origin == "Hellenic":
                 S_EW *= sreq2
-            L2, noiseline2, R2, gof2 = sr_fit(frequencies, S_EW, NUM_HARMONICS)
+            L2, _, R2, gof2 = sr_fit(frequencies, S_EW, NUM_HARMONICS)
         else:
             S_EW = None
 
         # Frequency-domain plotting
         if do_plot:
             plt.subplot(2, 1, 2)
-            plt.plot(frequencies, S_NS, 'r', lw=1, label='PSD $B_{NS}$ Downsampled')
-            plt.plot(frequencies, L1, label='Lorentzian Fit')
+            plt.plot(frequencies, S_NS, 'r', lw=1, label='$B_{NS}$ PSD')
+            plt.plot(frequencies, L1, label='$B_{NS}$ '+f'Lorentzian Fit: {gof1:.2f}')            
+            # plt.plot(frequencies, noiseline1 * np.ones_like(frequencies), '--', label='Noise Line')
+            # plt.annotate(f"Fit Rating: {gof1:.2f}", xy=(0.65, 0.85), xycoords='axes fraction', fontsize=10, color='red')
             if S_EW is not None:
-                plt.plot(frequencies, S_EW, 'b', lw=1, label='PSD $B_{EW}$ Downsampled')
-                plt.plot(frequencies, L2, label='Lorentzian Fit')
+                plt.plot(frequencies, S_EW, 'b', lw=1, label='$B_{EW}$ PSD')
+                plt.plot(frequencies, L2, label='$B_{EW}$ '+f'EW Lorentzian Fit: {gof2:.2f}')
+                # plt.plot(frequencies, noiseline2 * np.ones_like(frequencies), '--', label='Noise Line')
+                # plt.annotate(f"Fit Rating: {gof2:.2f}", xy=(0.65, 0.75), xycoords='axes fraction', fontsize=10, color='blue')
             plt.title(f"{file_origin}-Logger Frequency-Domain Signal\n{formatted_datetime}")
             plt.ylabel(r"$PSD\ [pT^2/Hz]$")
             plt.xlabel("Frequency [Hz]")
@@ -982,6 +986,8 @@ def transform_signal(input_filename, file_extension, do_plot=False):
         # Save results
         buffer = io.BytesIO()
         np.savez(buffer, freqs=frequencies, NS=S_NS, EW=S_EW if S_EW is not None else np.array([]))
+        np.savez(buffer, freqs=frequencies, NS=S_NS, EW=S_EW if S_EW is not None else np.array([]), R1=R1, R2=R2 if S_EW is not None else np.array([]))
+
         compressed_data = zstd.ZstdCompressor(level=3).compress(buffer.getvalue())
 
         with open(os.path.splitext(input_filename)[0] + '.zst', 'wb') as f:
@@ -1007,6 +1013,8 @@ def process_files_in_directory():
     for root, dirs, files in os.walk(INPUT_DIRECTORY):
         signal_files = [f for f in files if f.endswith(FILE_TYPE)]
         all_signal_files.extend([os.path.join(root, os.path.splitext(f)[0]) for f in signal_files])
+    if len(all_signal_files)==0:
+        print(f"No {FILE_TYPE} files found in {INPUT_DIRECTORY} directory!")
     print(f"Will transform {len(all_signal_files)} {FILE_TYPE} files!")
     # Create a single progress bar for all files
     with tqdm(total=len(all_signal_files), unit="file", bar_format='|\033[94m{bar}\033[0m| {percentage:3.0f}%', ncols=107, leave=False) as pbar:
@@ -1024,7 +1032,7 @@ def select_file_and_transform():
 
     # Open file dialog to select a single file
     file_path = filedialog.askopenfilename(
-        initialdir=INPUT_DIRECTORY, 
+        # initialdir=INPUT_DIRECTORY, 
         title="Select a signal file",
         filetypes=[("POL Files", "*.pol"), ("HEL Files", "*.hel"), ("All Files", "*.*")]
     )
@@ -1069,13 +1077,14 @@ if __name__ == "__main__":
 
     if args.file_select:
         # File selection mode
+        print(f"Please select the singal you want to plot.")
         select_file_and_transform()
         exit(0)
     else:
         # Set global FILE_TYPE based on user input
         FILE_TYPE = f".{args.file_type}"
         validate_file_type(FILE_TYPE)  # Validate the file type
-
+        print(f"Will process {FILE_TYPE} files from {INPUT_DIRECTORY} dir.")
         # Directory processing mode
         start_time = time.time()
         process_files_in_directory()

@@ -53,6 +53,7 @@ int read_dat_file(const char *fn, int **Bx, int **By, int *nr_out) {
     // Adjusted bounds check with more verbose error reporting
     for (int j = 0; j < 89; j++) {
         if (i + 4 >= file_size) {
+            fprintf(stderr, "\33[2K\r"); 
             fprintf(stderr, "Out of bounds in read_dat_file (loop 1): %d/%ld, file: %s\n", i + 4, file_size, fn);
             free(data);
             free(*Bx);
@@ -70,6 +71,7 @@ int read_dat_file(const char *fn, int **Bx, int **By, int *nr_out) {
     for (int n = 0; n < 8836; n++) {
         for (int j = 0; j < 102; j++) {
             if (i + 4 >= file_size) {
+                fprintf(stderr, "\33[2K\r");                 
                 fprintf(stderr, "Out of bounds in read_dat_file (loop 2): %d/%ld, file: %s\n", i + 4, file_size, fn);
                 free(data);
                 free(*Bx);
@@ -87,6 +89,7 @@ int read_dat_file(const char *fn, int **Bx, int **By, int *nr_out) {
     // Loop 3 with error reporting
     for (int j = 0; j < 82; j++) {
         if (i + 4 >= file_size) {
+            fprintf(stderr, "\33[2K\r"); 
             fprintf(stderr, "Out of bounds in read_dat_file (loop 3): %d/%ld, file: %s\n", i + 4, file_size, fn);
             free(data);
             free(*Bx);

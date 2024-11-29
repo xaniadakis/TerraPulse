@@ -202,7 +202,6 @@ void downsample_dat_signal(double *input_signal, double *downsampled_signal, int
 }
 
 void downsample_srd_signal(SrdData data, int downsample_factor, const char *filename) {
-    int new_size = data.N / 1; // Total downsampled size
     int samples_per_channel = (data.ch == 1) ? (data.N / 2) : data.N; // Per-channel samples for dual channel
     int downsampled_samples_per_channel = samples_per_channel / downsample_factor; // Downsampled size per channel
 
@@ -218,8 +217,14 @@ void downsample_srd_signal(SrdData data, int downsample_factor, const char *file
 
             // Aggregate samples for both channels
             for (int j = 0; j < downsample_factor; j++) {
-                sum_channel1 += data.x[i * downsample_factor + j];
-                sum_channel2 += data.y[i * downsample_factor + j];
+                int idx = i * downsample_factor + j;
+                if (idx >= samples_per_channel) {
+                    fprintf(stderr, "1CH: Index out of bounds: %d\n", idx);
+                    fclose(file);
+                    return;
+                }
+                sum_channel1 += data.x[idx];
+                sum_channel2 += data.y[idx];
             }
 
             // Compute averages
@@ -230,12 +235,18 @@ void downsample_srd_signal(SrdData data, int downsample_factor, const char *file
             fprintf(file, "%lf\t%lf\n", avg_channel1, avg_channel2);
         }
     } else { // Single channel
-        for (int i = 0; i < new_size; i++) {
+        for (int i = 0; i < downsampled_samples_per_channel; i++) {
             double sum = 0.0;
 
             // Aggregate samples for single channel
             for (int j = 0; j < downsample_factor; j++) {
-                sum += data.x[i * downsample_factor + j];
+                int idx = i * downsample_factor + j;
+                if (idx >= samples_per_channel) {
+                    fprintf(stderr, "2CH: Index out of bounds: %d\n", idx);
+                    fclose(file);
+                    return;
+                }
+                sum += data.x[idx];
             }
 
             // Compute average
