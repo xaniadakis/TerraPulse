@@ -27,7 +27,9 @@
 typedef enum { HELLENIC_LOGGER, POLSKI_LOGGER } Mode;
 Mode current_mode;
 
-const char *INPUT_DIR = NULL;
+// const char *INPUT_DIR = NULL;
+int NUM_INPUT_DIRS = 0;
+const char **INPUT_DIRS = NULL;
 const char *OUTPUT_DIR = NULL;
 int total_files = 0, processed_files = 0;
 time_t start_time;
@@ -37,12 +39,6 @@ char current_output_dir[1028] = "";
 int current_dir_file_count = 0;
 size_t OUTPUT_DIR_PATH_LEN = 0;
 size_t OUTPUT_FILE_PATH_LEN = 0;
-
-char* get_relative_path(const char* path) {
-    const char* relative_path = path + strlen(INPUT_DIR);
-    const char* last_slash = strrchr(relative_path, '/');
-    return last_slash ? strndup(relative_path, last_slash - relative_path) : strdup(relative_path);
-}
 
 void print_progress(int progress, int total) {
     int bar_width = (progress * PROGRESS_BAR_WIDTH) / total;
@@ -222,6 +218,11 @@ void count_files(const char *dir_path, const char *file_type) {
     DIR *dir = opendir(dir_path);
     char path[1024];
 
+    if (strstr(dir_path, "DONT_PROCESS") != NULL) {
+        printf("Skipping directory: '%s' while counting\n", dir_path);  // Print the directory name before returning
+        return;  // Ignore directory if name contains "DONT_PROCESS"
+    }
+
     while ((entry = readdir(dir)) != NULL) {
         if (entry->d_type == DT_DIR && strcmp(entry->d_name, ".") && strcmp(entry->d_name, "..")) {
             snprintf(path, sizeof(path), "%s/%s", dir_path, entry->d_name);
@@ -239,6 +240,11 @@ void traverse_directory(const char *dir_path) {
     struct dirent *entry;
     DIR *dir = opendir(dir_path);
     char path[1024];
+
+    if (strstr(dir_path, "DONT_PROCESS") != NULL) {
+        printf("Skipping directory: '%s' while processing.\n", dir_path);  // Print the directory name before returning
+        return;  // Ignore directory if name contains "DONT_PROCESS"
+    }
 
     while ((entry = readdir(dir)) != NULL) {
         if (entry->d_type == DT_DIR && strcmp(entry->d_name, ".") && strcmp(entry->d_name, "..")) {
@@ -264,12 +270,16 @@ void traverse_directory(const char *dir_path) {
 
 int main(int argc, char *argv[]) {
     if (argc < 4) {
-        fprintf(stderr, "Usage: %s <mode: pol|hel> <input_dir> <output_dir>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <mode: pol|hel> <input_dir1> <input_dir2> ... <input_dirN> <output_dir>\n", argv[0]);
         return 1;
     }
 
     const char *mode_arg = argv[1];
-    INPUT_DIR = argv[2];
+    NUM_INPUT_DIRS = argc - 3;
+    INPUT_DIRS = (const char **)malloc(NUM_INPUT_DIRS * sizeof(char *));
+    for (int i = 0; i < NUM_INPUT_DIRS; i++) {
+        INPUT_DIRS[i] = argv[i + 2];
+    }
     OUTPUT_DIR = argv[3];
 
     if (strcmp(mode_arg, "hel") == 0) {
@@ -284,16 +294,6 @@ int main(int argc, char *argv[]) {
     const char *file_type = current_mode == HELLENIC_LOGGER ? HELLENIC_LOGGER_FILE_TYPE : POLSKI_LOGGER_FILE_TYPE;
 
     struct stat st;
-    // Check input directory
-    if (stat(INPUT_DIR, &st) != 0) {
-        printf("Error: Input Directory '%s' does not exist. (stat returned: %d)\n", 
-            INPUT_DIR, errno);
-        return 1;
-    } 
-    if (!S_ISDIR(st.st_mode)) {
-        printf("Error: Input Directory '%s' is not a directory.\n", INPUT_DIR);
-        return 1;
-    }
 
     // Check output directory
     if (stat(OUTPUT_DIR, &st) != 0) {
@@ -313,27 +313,46 @@ int main(int argc, char *argv[]) {
         printf("Error: Output Directory '%s' exists but is not a directory.\n", OUTPUT_DIR);
         return 1;
     }
-    printf("Will read from directory '%s' into '%s'.\n", INPUT_DIR, OUTPUT_DIR);
+    printf("Will read into '%s'.\n", OUTPUT_DIR);
 
-    printf("Counting files...\n");
-    count_files(INPUT_DIR, file_type);
+    // First, count all files in all input directories
+    for (int i = 0; i < NUM_INPUT_DIRS; i++) {
+        const char *input_dir = INPUT_DIRS[i];
+
+        // Check input directory
+        if (stat(input_dir, &st) != 0) {
+            printf("Error: Input Directory '%s' does not exist. (stat returned: %d)\n", input_dir, errno);
+            continue; // Skip to the next directory
+        } 
+        if (!S_ISDIR(st.st_mode)) {
+            printf("Error: Input Directory '%s' is not a directory.\n", input_dir);
+            continue;
+        }
+
+        printf("\nCounting files in input directory: '%s'\n", input_dir);
+        count_files(input_dir, file_type);
+    }
+
     if (total_files == 0) {
-        printf("No %s files found inside %s.\n", file_type, INPUT_DIR);
+        printf("No %s files found in any of the input directories.\n", file_type);
+        free(INPUT_DIRS);
         return 0;
     }
-    printf("Total files: %d\n", total_files);
+    printf("Total files found in all input directories: %d\n", total_files);
 
     OUTPUT_DIR_PATH_LEN = strlen(OUTPUT_DIR) + strlen("YYYYMMDD") + 2;
     OUTPUT_FILE_PATH_LEN = OUTPUT_DIR_PATH_LEN + strlen("YYYYMMDDHHMMSS.txt") + 2;
 
-    start_time = time(NULL);
-    traverse_directory(INPUT_DIR);
-
-    // Create metadata for the last directory processed
-    if (current_output_dir[0] != '\0') {
-        create_metadata_file(current_output_dir, current_dir_file_count);
+    for (int i = 0; i < NUM_INPUT_DIRS; i++) {
+        const char *input_dir = INPUT_DIRS[i];
+        printf("\nProcessing input directory: '%s'\n", input_dir);
+        traverse_directory(input_dir);
+        if (current_output_dir[0] != '\0') {
+            create_metadata_file(current_output_dir, current_dir_file_count);
+        }
     }
 
     printf("\nProcessing complete.\n");
+    free(INPUT_DIRS);
     return 0;
 }

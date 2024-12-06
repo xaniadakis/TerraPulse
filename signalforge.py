@@ -32,16 +32,16 @@ def translate_windows_to_linux_path(windows_path):
 # Argument parsing
 parser = ArgumentParser(description="Process input and output directories with specified mode.")
 parser.add_argument("mode", choices=["hel", "pol"], help="Mode of operation ('hel' or 'pol').")
-parser.add_argument("input_dir", help="Path to the input directory (Windows or Linux path).")
+parser.add_argument("input_dirs", nargs='+', help="List of input directories (Windows or Linux paths).")
 parser.add_argument("output_dir", help="Path to the output directory (Windows or Linux path).")
 parser.add_argument("--skip-c", action="store_true", 
                     help="Skip the 'make clean all' and 'signal_to_text' steps and only run signal_to_psd.")
 
 args = parser.parse_args()
 mode = args.mode
-input_dir = translate_windows_to_linux_path(args.input_dir)
+input_dirs = [translate_windows_to_linux_path(d) for d in args.input_dirs]
 output_dir = translate_windows_to_linux_path(args.output_dir)
-print(f"input_dir: {args.input_dir} -> {input_dir}")
+print(f"input_dirs: {args.input_dirs} -> {input_dirs}")
 print(f"output_dir: {args.output_dir} -> {output_dir}")
 
 # Start timer
@@ -57,14 +57,14 @@ start_time = time.time()
 #         print(f"{YELLOW}{output_dir} directory contents remain intact.{NC}")
 
 if not args.skip_c:
-    # print(f"{YELLOW}Running make clean all...{NC}")
-    # subprocess.run(["make", 
-    #                 # "-s", 
-    #                 "clean", "all", "-C", "./c"], check=True)
+    print(f"{YELLOW}Running make clean all...{NC}")
+    subprocess.run(["make", 
+                    # "-s", 
+                    "clean", "all", "-C", "./c"], check=True)
 
     # Run signal_to_text
     print(f"{YELLOW}Running signal_to_text...{NC}")
-    signal_to_text_cmd = ["./c/build/signal_to_text", mode, input_dir, output_dir]
+    signal_to_text_cmd = ["./c/build/signal_to_text", mode] + input_dirs + [output_dir]
     try:
         subprocess.run(signal_to_text_cmd, check=True)
         print(f"{GREEN}signal_to_text execution complete.{NC}")
