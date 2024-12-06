@@ -1089,7 +1089,7 @@ def select_and_print_srd_data():
 
     # Open a file dialog to select the SRD file
     file_path = filedialog.askopenfilename(
-        initialdir="/mnt/e/KalpakiSortedData/", 
+        initialdir="/mnt/f/SouthStationSimple/Parnon260621", 
         title="Select an SRD File",
         filetypes=[("SRD Files", "*.SRD"), ("All Files", "*.*")]
     )

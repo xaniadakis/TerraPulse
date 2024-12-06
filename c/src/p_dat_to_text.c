@@ -226,7 +226,7 @@ void *worker_thread(void *arg) {
             continue;
         }
 
-        int result = process_file(task->input_file, task->input_dir);
+        int result = process_dat_file(task->input_file, task->input_dir);
         if (result == 0) {
             metadata->files_written++;
         } else {
@@ -250,7 +250,7 @@ void *worker_thread(void *arg) {
     return NULL;
 }
 
-int process_file(const char *input_file, const char *input_dir) {
+int process_dat_file(const char *input_file, const char *input_dir) {
     int *HNS = NULL, *HEW = NULL, nr = 0;
     if (read_dat_file(input_file, &HNS, &HEW, &nr) != 0) {
         printf("Something went wrong while reading file: %s\n", input_file);

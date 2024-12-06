@@ -34,6 +34,8 @@ parser = ArgumentParser(description="Process input and output directories with s
 parser.add_argument("mode", choices=["hel", "pol"], help="Mode of operation ('hel' or 'pol').")
 parser.add_argument("input_dir", help="Path to the input directory (Windows or Linux path).")
 parser.add_argument("output_dir", help="Path to the output directory (Windows or Linux path).")
+parser.add_argument("--skip-c", action="store_true", 
+                    help="Skip the 'make clean all' and 'signal_to_text' steps and only run signal_to_psd.")
 
 args = parser.parse_args()
 mode = args.mode
@@ -46,28 +48,29 @@ print(f"output_dir: {args.output_dir} -> {output_dir}")
 start_time = time.time()
 
 # Clean
-if os.path.exists(output_dir):
-    response = input(f"{RED}Do you want to delete its contents? (yes/no): {NC} ").strip().lower()
-    if response in ['yes', 'y']:
-        print(f"{YELLOW}Removing old contents of the output directory...{NC}")
-        shutil.rmtree(output_dir)
-    else:
-        print(f"{YELLOW}{output_dir} directory contents remain intact.{NC}")
+# if os.path.exists(output_dir):
+#     response = input(f"{RED}Do you want to delete its contents? (yes/no): {NC} ").strip().lower()
+#     if response in ['yes', 'y']:
+#         print(f"{YELLOW}Removing old contents of the output directory...{NC}")
+#         shutil.rmtree(output_dir)
+#     else:
+#         print(f"{YELLOW}{output_dir} directory contents remain intact.{NC}")
 
-print(f"{YELLOW}Running make clean all...{NC}")
-subprocess.run(["make", 
-                # "-s", 
-                "clean", "all", "-C", "./c"], check=True)
+if not args.skip_c:
+    # print(f"{YELLOW}Running make clean all...{NC}")
+    # subprocess.run(["make", 
+    #                 # "-s", 
+    #                 "clean", "all", "-C", "./c"], check=True)
 
-# Run signal_to_text
-print(f"{YELLOW}Running signal_to_text...{NC}")
-signal_to_text_cmd = ["./c/build/signal_to_text", mode, input_dir, output_dir]
-try:
-    subprocess.run(signal_to_text_cmd, check=True)
-    print(f"{GREEN}signal_to_text execution complete.{NC}")
-except subprocess.CalledProcessError as e:
-    print(f"{RED}signal_to_text failed: {e}{NC}")
-    sys.exit(1)
+    # Run signal_to_text
+    print(f"{YELLOW}Running signal_to_text...{NC}")
+    signal_to_text_cmd = ["./c/build/signal_to_text", mode, input_dir, output_dir]
+    try:
+        subprocess.run(signal_to_text_cmd, check=True)
+        print(f"{GREEN}signal_to_text execution complete.{NC}")
+    except subprocess.CalledProcessError as e:
+        print(f"{RED}signal_to_text failed: {e}{NC}")
+        sys.exit(1)
 
 # Run signal_to_psd.py
 print(f"{YELLOW}Running signal_to_psd...{NC}")

@@ -222,10 +222,28 @@ def generate_spectrogram_from_zst_files(directory, output_directory, selected_pe
 # Command-line interface
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate spectrogram from .zst files in a directory")
-    parser.add_argument("directory", help="Path to the directory containing .zst files")
-    parser.add_argument("output_directory", help="Path to the output directory for spectrograms")
-    parser.add_argument("--downsample", type=int, default=1, help="Downsample factor for faster plotting")
-    parser.add_argument("--chunk_size_hours", type=int, default=24, help="Chunk size in hours for splitting long periods")
+    parser.add_argument(
+        "-d", "--directory", 
+        required=True,
+        help="Path to the directory containing .zst files"
+    )
+    parser.add_argument(
+        "-o", "--output-directory", 
+        required=True,
+        help="Path to the output directory for spectrograms"
+    )
+    parser.add_argument(
+        "--downsample", 
+        type=int, 
+        default=1, 
+        help="Downsample factor for faster plotting"
+    )
+    parser.add_argument(
+        "--chunk_size_hours", 
+        type=int, 
+        default=24, 
+        help="Chunk size in hours for splitting long periods"
+    )
     args = parser.parse_args()
 
     # Collect all .zst files and find continuous periods

@@ -12,6 +12,12 @@ from scipy.optimize import curve_fit
 import traceback
 import datetime
 from scipy.optimize import leastsq
+import numpy as np
+import pandas as pd
+from colorama import Fore, Style
+import os
+import pandas as pd
+from pathlib import Path
 
 NUM_HARMONICS = 7  # Define the number of harmonics expected
 FMIN = 3
@@ -23,9 +29,12 @@ FILE_TYPE = ''
 WORKED = 0
 new_logger_fact = 0.25  # New logger amp factor
 old_logger = 0  # Global variable in the original code; define as needed
-
+na_fits_num = 0
 # Global list to store filenames of files with errors
 error_files = []
+fit_data = {'timestamp': [], 'NS_fit': [], 'EW_fit': []}
+zero_fit_count = {'NS': 0, 'EW': 0}  # Counter for zero fits
+output_means_file = INPUT_DIRECTORY+"/mean_fit_values.txt"  # Specify the output file path
 
 def get_equalizer(freqs, date):
     # Define important dates
@@ -722,6 +731,24 @@ def get_res_5():
     res_coil = get_res_coil(70)
     return res_amp, res_coil
 
+def plot_signal_on_fit_error(f, p_in, signal_filename, component, message=None):
+    """
+    Plot the signal and optionally display a message if fit fails.
+    """
+    plt.figure(figsize=(10, 6))
+    if component == "NS":
+        plt.plot(f, p_in, 'r', lw=1, label='$B_{NS}$ PSD')
+    else:
+        plt.plot(f, p_in, 'b', lw=1, label='$B_{EW}$ PSD')
+    plt.title(f"{signal_filename} Frequency-Domain Signal\n")
+
+    plt.xlabel("Frequency [Hz]")
+    plt.ylabel("Amplitude")
+    plt.grid(ls='--')
+    plt.legend()
+    if message:
+        plt.annotate(message, xy=(0.05, 0.95), xycoords='axes fraction', fontsize=10, color='red', ha='left', va='top')
+    plt.show()
 
 def lorentzian(f, *params):
     """
@@ -740,10 +767,8 @@ def lorentzian(f, *params):
 def gaussian_weights(f, mean, std, scale_factor=1.0):
     # Scale the width based on the data's frequency range (optional)
     std_adjusted = std * (np.max(f) - np.min(f)) / np.std(f)
-    
     # Compute the Gaussian weights
     weights = np.exp(-((f - mean) ** 2) / (2 * std_adjusted ** 2))
-    
     # Apply the scaling factor
     return scale_factor * weights
 
@@ -766,8 +791,6 @@ def r_squared(y_obs, y_model):
     ss_res = np.sum((y_obs - y_model) ** 2)
     ss_tot = np.sum((y_obs - np.mean(y_obs)) ** 2)
     return 1 - (ss_res / ss_tot)
-
-import numpy as np
 
 def rate_fit(chi2, r2, n, p, chi2_weight=0.5, r2_weight=0.5):
     """
@@ -803,9 +826,51 @@ def rate_fit(chi2, r2, n, p, chi2_weight=0.5, r2_weight=0.5):
     
     return fit_rating
 
-def sr_fit(f, p_in, modes):
-    f_res = np.array([7.8, 14, 20, 27, 33, 39, 45])[:modes]
+
+import numpy as np
+from scipy.optimize import least_squares
+from scipy.signal import find_peaks
+
+def sr_fit(f, p_in, modes, signal_filename, component):
+    global na_fits_num
+
+    # min_distance_hz = 3.3  # Minimum separation in Hz
+    # df = f[1] - f[0]  # Frequency step size
+    # distance = int(min_distance_hz / df)
+
+    # # Initial frequency guesses using peak detection with a minimum distance
+    # # peak_threshold = np.median(p_in) + 0.1 * (np.max(p_in) - np.median(p_in))
+    # # peaks, _ = find_peaks(p_in, height=peak_threshold, distance=distance)
+    # peaks, _ = find_peaks(p_in, height=np.max(p_in) * 0.1, distance=distance)
+    # print(f"{component} peaks: {f[peaks]}")
+    # if len(peaks) >= modes:
+    #     f_res = f[peaks[:modes]]
+    # else:
+    #     # If fewer peaks than modes, spread frequencies evenly
+    #     print(f"Warning: Detected fewer peaks ({len(peaks)}) than modes for {component}. Using default spacing.")
+    #     f_res = np.linspace(np.min(f), np.max(f), modes)
+    #     # f_res = f[peaks]
+
+        # Schumann resonance harmonics (in Hz)
+    schumann_harmonics = np.array([7.8, 14, 20, 27, 33, 39, 45])  # Add or modify harmonics as needed
+
+    min_distance_hz = 4
+    df = f[1] - f[0]
+    distance = int(min_distance_hz / df)
+
+    # Peak detection
+    peaks, _ = find_peaks(p_in, height=np.max(p_in) * 0.1, distance=distance)
+
+    if len(peaks) >= modes:
+        # Use the detected peaks if sufficient
+        f_res = f[peaks[:modes]]
+    else:
+        f_res = schumann_harmonics[:modes]
+
+    # Initial amplitude guesses around the detected peaks
     ainits = [np.mean(p_in[(f > freq - 0.5) & (f < freq + 0.5)]) for freq in f_res]
+
+    # Set initial Q factors and background noise level
     Qstart = 5
     init_params = []
     for i in range(modes):
@@ -816,31 +881,124 @@ def sr_fit(f, p_in, modes):
     lower_bounds = []
     upper_bounds = []
     for i in range(modes):
+        # lower_bounds.extend([f_res[i] - 5, 0.5 * ainits[i], 1])
+        # upper_bounds.extend([f_res[i] + 5, 1.5 * ainits[i], 50])
         lower_bounds.extend([f_res[i] - 3, 0, 1])
         upper_bounds.extend([f_res[i] + 3, 2 * max(p_in), 20])
     lower_bounds.append(0)  # BN lower bound
     upper_bounds.append(max(p_in))  # BN upper bound
 
-    mean_NS = np.mean(f)
-    std_NS = np.std(f)
-    weights_NS = gaussian_weights(f, mean_NS, std_NS)
+    # Compute Gaussian weights
+    mean = np.mean(f)
+    std = np.std(f)
+    noise_level = np.std(p_in[:int(len(p_in) * 0.1)])  # Estimate noise from the first 10% of data
+    weights = gaussian_weights(f, mean, std, scale_factor=1.0) / (noise_level + 1e-6)
+    # weights = gaussian_weights(f, mean, std)
 
-    # Use leastsq for fitting
-    params, _ = leastsq(residuals, init_params, args=(f, p_in * weights_NS, lorentzian, weights_NS))
+    try:
+        # Use least_squares for fitting
+        result = least_squares(
+            residuals,
+            init_params,
+            bounds=(lower_bounds, upper_bounds),
+            args=(f, p_in, lorentzian, weights),
+            method='trf',
+            loss='soft_l1',  # Robust loss to handle outliers
+            # max_nfev=10000
+        )
 
-    # Extract the fitted values
-    fitline = lorentzian(f, *params)
-    noiseline = params[-1]
-    results = np.reshape(params[:-1], (modes, 3))
+        if not result.success:
+            raise RuntimeError(result.message)
 
-    # Calculate the fit rating from 0 to 100
-    fit_rating = rate_fit(chi_squared(p_in, fitline, weights_NS), 
-                          r_squared(p_in, fitline), len(f), len(params), 
-                          chi2_weight=0.5, r2_weight=0.5)
+        params = result.x
+
+        # Extract the fitted values
+        fitline = lorentzian(f, *params)
+        noiseline = params[-1]
+        results = np.reshape(params[:-1], (modes, 3))
+
+        # Calculate fit rating (Chi-squared and R-squared metrics can be added if needed)
+        chi2 = np.sum(((p_in - fitline) ** 2) / weights**2)
+        r2 = 1 - np.sum((p_in - fitline) ** 2) / np.sum((p_in - np.mean(p_in)) ** 2)
+        # aic = len(f) * np.log(np.sum((p_in - fitline) ** 2) / len(f)) + 2 * len(params)
+        fit_rating = (0.5 * (1 / (1 + chi2 / (len(f) - len(params))))) + (0.5 * r2)
+        # fit_rating = (0.333 * r2) + (0.333 * (1 / (1 + chi2))) + (0.333 * (1 / (1 + aic)))
+        fit_rating *= 100
+        # print(f"{component} chi2: {(1 / (1 + chi2 / (len(f) - len(params))))}, r2:{r2}")
+        return fitline, noiseline, results, fit_rating
+
+    except RuntimeError as e:
+        na_fits_num += 1
+        tqdm.write(f"{na_fits_num} N/A fit for {component} of {signal_filename} (conv err)")
+        return None, None, None, 0.0
+
+    except Exception as e:
+        na_fits_num += 1
+        tqdm.write(f"{na_fits_num} N/A fit for {component} of {signal_filename} (ex)")
+        return None, None, None, 0.0
     
-    # print(f"Fit rating: {fit_rating:.2f}")
+# def sr_fit(f, p_in, modes, signal_filename, component):
+#     global na_fits_num
+#     f_res = np.array([7.8, 14, 20, 27, 33, 39, 45])[:modes]
+#     ainits = [np.mean(p_in[(f > freq - 0.5) & (f < freq + 0.5)]) for freq in f_res]
+#     Qstart = 5
+#     init_params = []
+#     for i in range(modes):
+#         init_params.extend([f_res[i], ainits[i], Qstart])
+#     init_params.append(0)  # Background noise (BN) start value
 
-    return fitline, _, results, fit_rating  # gof (goodness of fit) is not implemented
+#     # Define bounds for parameters
+#     lower_bounds = []
+#     upper_bounds = []
+#     for i in range(modes):
+#         lower_bounds.extend([f_res[i] - 3, 0, 1])
+#         upper_bounds.extend([f_res[i] + 3, 2 * max(p_in), 20])
+#     lower_bounds.append(0)  # BN lower bound
+#     upper_bounds.append(max(p_in))  # BN upper bound
+
+#     mean = np.mean(f)
+#     std = np.std(f)
+#     weights = gaussian_weights(f, mean, std)
+
+#     try:
+#         # Use leastsq for fitting
+#         params, cov_x, infodict, mesg, ier = leastsq(
+#             residuals, init_params, args=(f, p_in * weights, lorentzian, weights), full_output=True, maxfev=10000
+#         )
+
+#         if ier not in [1, 2, 3, 4]:
+#             # Fit did not converge; ier values other than 1-4 indicate failure
+#             raise RuntimeError(f"{mesg}")
+
+#         # Extract the fitted values
+#         fitline = lorentzian(f, *params)
+#         _ = params[-1] # supposed to be the noiseline
+#         results = np.reshape(params[:-1], (modes, 3))
+
+#         # Calculate the fit rating from 0 to 100
+#         fit_rating = rate_fit(chi_squared(p_in, fitline, weights), 
+#                             r_squared(p_in, fitline), 
+#                             len(f), 
+#                             len(params), 
+#                             chi2_weight=0.5, 
+#                             r2_weight=0.5)
+        
+#         return fitline, _, results, fit_rating
+#     except RuntimeError as e:
+#         # Explicitly handle the fit failure
+#         # print("Fit failed: No fit available for the current data.")
+#         na_fits_num += 1
+#         print(f"\r{na_fits_num} N/A fit for {component} of {signal_filename} -> Error: {str(e)}")
+#         # plot_signal_on_fit_error(f, p_in, signal_filename, component, message=str(e))
+#         return None, None, None, 0.0
+
+#     except Exception as e:
+#         # Handle any other unexpected errors
+#         # print("An unexpected error occurred.")
+#         na_fits_num += 1
+#         print(f"\r{na_fits_num} N/A fit for {component} of {signal_filename} -> Error: {str(e)}")
+#         # plot_signal_on_fit_error(f, p_in, signal_filename, component, message="Unexpected error during fit.")
+#         return None, None, None, 0.0
 
 def validate_file_type(file_type):
     if file_type not in ['.pol', '.hel']:
@@ -874,7 +1032,7 @@ def read_signals(file_path):
 
 
 def transform_signal(input_filename, file_extension, do_plot=False):
-    global WORKED 
+    global WORKED, fit_data
     try:
         # Load data from the file
         data = np.loadtxt(input_filename+file_extension, delimiter='\t')
@@ -920,6 +1078,10 @@ def transform_signal(input_filename, file_extension, do_plot=False):
         w = signal.windows.hamming(M)
         sreq1, sreq2 = None, None
         # Welch's power spectral density estimate
+        if len(HNS) < M:
+            tqdm.write(f"Warning: NS Signal length {len(HNS)} is shorter than nperseg {M}.")    
+            error_files.append(input_filename+": NS signal shorter than window") 
+            return
         frequencies, S_NS = signal.welch(x=HNS, window=w, fs=SAMPLING_RATE, nperseg=M, noverlap=overlap, scaling='spectrum')
 
         # Create a frequency mask based on FMIN and FMAX
@@ -932,8 +1094,8 @@ def transform_signal(input_filename, file_extension, do_plot=False):
         if file_origin == "Hellenic":
             sreq1, sreq2 = get_equalizer(frequencies, file_datetime)
             S_NS *= sreq1
-        L1, _, R1, gof1 = sr_fit(frequencies, S_NS, NUM_HARMONICS)
-
+        L1, _, R1, gof1 = sr_fit(frequencies, S_NS, NUM_HARMONICS, input_filename, "NS")
+        L2, R2, gof2 = None, None, None
         if HEW is not None:
             # Compute PSD for HEW if it exists
             # frequencies, S_EW = signal.welch(HEW, fs=SAMPLING_RATE, nperseg=M, noverlap=overlap, scaling='spectrum')
@@ -946,6 +1108,10 @@ def transform_signal(input_filename, file_extension, do_plot=False):
             #     frequencies = frequencies[mask]
 
             # Compute the Welch power spectral density estimate for the second signal
+            if len(HEW) < M:
+                tqdm.write(f"Warning: EW Signal length {len(HEW)} is shorter than nperseg {M}.")        
+                error_files.append(input_filename+": EW signal shorter than window") 
+                return
             frequencies, S_EW = signal.welch(HEW, fs=SAMPLING_RATE, nperseg=M, noverlap=overlap, scaling='spectrum')
 
             # Apply the same frequency mask based on FMIN and FMAX
@@ -959,20 +1125,26 @@ def transform_signal(input_filename, file_extension, do_plot=False):
             # Adjust S_EW depending on the file origin
             if file_origin == "Hellenic":
                 S_EW *= sreq2
-            L2, _, R2, gof2 = sr_fit(frequencies, S_EW, NUM_HARMONICS)
+            L2, _, R2, gof2 = sr_fit(frequencies, S_EW, NUM_HARMONICS, input_filename, "EW")
         else:
             S_EW = None
 
         # Frequency-domain plotting
         if do_plot:
             plt.subplot(2, 1, 2)
-            plt.plot(frequencies, S_NS, 'r', lw=1, label='$B_{NS}$ PSD')
-            plt.plot(frequencies, L1, label='$B_{NS}$ '+f'Lorentzian Fit: {gof1:.2f}')            
+            if L1 is not None and L1.any():
+                plt.plot(frequencies, S_NS, 'r', lw=1, label='$B_{NS}$ PSD')
+                plt.plot(frequencies, L1, label='$B_{NS}$ '+f'Lorentzian Fit: {gof1:.2f}')  
+            else:
+                plt.plot(frequencies, S_NS, 'r', lw=1, label='$B_{NS}$ PSD (Fit N/A)')
             # plt.plot(frequencies, noiseline1 * np.ones_like(frequencies), '--', label='Noise Line')
             # plt.annotate(f"Fit Rating: {gof1:.2f}", xy=(0.65, 0.85), xycoords='axes fraction', fontsize=10, color='red')
             if S_EW is not None:
-                plt.plot(frequencies, S_EW, 'b', lw=1, label='$B_{EW}$ PSD')
-                plt.plot(frequencies, L2, label='$B_{EW}$ '+f'EW Lorentzian Fit: {gof2:.2f}')
+                if L2 is not None and L2.any():
+                    plt.plot(frequencies, S_EW, 'b', lw=1, label='$B_{EW}$ PSD')
+                    plt.plot(frequencies, L2, label='$B_{EW}$ '+f'EW Lorentzian Fit: {gof2:.2f}')
+                else:
+                    plt.plot(frequencies, S_EW, 'b', lw=1, label='$B_{EW}$ PSD (Fit N/A)')
                 # plt.plot(frequencies, noiseline2 * np.ones_like(frequencies), '--', label='Noise Line')
                 # plt.annotate(f"Fit Rating: {gof2:.2f}", xy=(0.65, 0.75), xycoords='axes fraction', fontsize=10, color='blue')
             plt.title(f"{file_origin}-Logger Frequency-Domain Signal\n{formatted_datetime}")
@@ -985,42 +1157,201 @@ def transform_signal(input_filename, file_extension, do_plot=False):
 
         # Save results
         buffer = io.BytesIO()
-        np.savez(buffer, freqs=frequencies, NS=S_NS, EW=S_EW if S_EW is not None else np.array([]))
-        np.savez(buffer, freqs=frequencies, NS=S_NS, EW=S_EW if S_EW is not None else np.array([]), R1=R1, R2=R2 if S_EW is not None else np.array([]))
-
+        np.savez(buffer, 
+                freqs=frequencies, 
+                NS=S_NS, 
+                EW=S_EW if S_EW is not None else np.array([]), 
+                gof1=gof1, 
+                gof2=gof2, 
+                **({"R1": R1} if R1 is not None else {}), 
+                **({"R2": R2} if R2 is not None else {}))
         compressed_data = zstd.ZstdCompressor(level=3).compress(buffer.getvalue())
 
         with open(os.path.splitext(input_filename)[0] + '.zst', 'wb') as f:
             f.write(compressed_data)
         WORKED += 1
+
+        fit_data['timestamp'].append(file_datetime)
+        fit_data['NS_fit'].append(gof1 if gof1 > 0 else np.nan)
+        fit_data['EW_fit'].append(gof2 if HEW is not None and gof2 > 0 else (np.nan if HEW is not None else None))
+
     except IndexError as ie:
-        print(f"Indexing error occurred while processing '{input_filename+file_extension}': {repr(ie)}")
-        print(f"Shape of data at error: {data.shape}")
+        tqdm.write(f"Indexing error occurred while processing '{input_filename+file_extension}': {repr(ie)}")
+        tqdm.write(f"Shape of data at error: {data.shape}")
         traceback.print_exc() 
         error_files.append(input_filename)    
     except ValueError as ve:
-        print(f"Value error occurred while processing '{input_filename+file_extension}': {repr(ve)[:500]}")
+        tqdm.write(f"Value error occurred while processing '{input_filename+file_extension}': {repr(ve)[:500]}")
         traceback.print_exc() 
         error_files.append(input_filename)
     except Exception as e:
-        print(f"An unexpected error occurred while processing '{input_filename+file_extension}': {repr(e)}")
+        tqdm.write(f"An unexpected error occurred while processing '{input_filename+file_extension}': {repr(e)}")
         traceback.print_exc() 
         error_files.append(input_filename)
 
+
 def process_files_in_directory():
-    # First, gather all the txt files from all subdirectories
-    all_signal_files = []
+    global na_fits_num
+
+    # Pre-index all `.zst` files for fast lookup
+    processed_files = set()
+    for root, _, files in os.walk(INPUT_DIRECTORY):
+        processed_files.update(
+            os.path.join(root, f[:-4]) for f in files if f.endswith('.zst')
+        )
+
+    # Gather files from each subdirectory and process them as packets
+    subdirectory_files = {}  # Dictionary to store files grouped by subdirectories
     for root, dirs, files in os.walk(INPUT_DIRECTORY):
         signal_files = [f for f in files if f.endswith(FILE_TYPE)]
-        all_signal_files.extend([os.path.join(root, os.path.splitext(f)[0]) for f in signal_files])
-    if len(all_signal_files)==0:
-        print(f"No {FILE_TYPE} files found in {INPUT_DIRECTORY} directory!")
-    print(f"Will transform {len(all_signal_files)} {FILE_TYPE} files!")
-    # Create a single progress bar for all files
-    with tqdm(total=len(all_signal_files), unit="file", bar_format='|\033[94m{bar}\033[0m| {percentage:3.0f}%', ncols=107, leave=False) as pbar:
-        for input_filename in all_signal_files:         
+        if signal_files:
+            subdirectory_files[root] = [
+                os.path.join(root, os.path.splitext(f)[0]) for f in signal_files
+            ]
+
+    if not subdirectory_files:
+        print(f"{Fore.RED}No {FILE_TYPE} files found in {INPUT_DIRECTORY} directory!{Style.RESET_ALL}")
+        return
+
+    print(f"Will transform files grouped in {len(subdirectory_files)} subdirectories!\n")
+
+    # Create an outer progress bar for subdirectory processing
+    subdir_pbar = tqdm(
+        total=len(subdirectory_files), 
+        desc=f"{Fore.CYAN}Total{Style.RESET_ALL}", 
+        unit="d", 
+        leave=True, 
+        bar_format="{l_bar}\033[44m{bar}\033[0m| {n_fmt}/{total_fmt} {unit} | el: {elapsed} | rem: {remaining}",
+        ncols=100  
+    )
+
+    for i, (subdir, file_list) in enumerate(subdirectory_files.items()):
+        unprocessed_files = [f for f in file_list if f not in processed_files]
+        if not unprocessed_files:
+            tqdm.write(f"Skipping subdirectory {i}: {subdir} (All files already processed)")
+            continue  # Skip to the next subdirectory
+
+        # Prepare the directory information
+        # tqdm.write(f"\nProcessing subdirectory {i + 1}/{len(subdirectory_files)}: {subdir} with {len(file_list)} files")
+
+        # Inner progress bar for files in the current subdirectory
+        # file_pbar = tqdm(
+        #     total=len(file_list), 
+        #     desc=f"{Fore.YELLOW}..../{Path(subdir).name}/{Style.RESET_ALL}", 
+        #     unit="files", 
+        #     leave=False, 
+        #     bar_format="{l_bar}\033[44m{bar}\033[0m| {n_fmt}/{total_fmt} {unit} | Elapsed: {elapsed}",
+        #     ncols=150  
+        # )
+        for input_filename in file_list:
             transform_signal(input_filename, FILE_TYPE, do_plot=False)
-            pbar.update(1)
+            # file_pbar.update(1)  # Update file progress bar
+        # file_pbar.close()  # Close the inner progress bar once done
+
+        # If valid fit data exists, process and print statistics
+        if fit_data['timestamp']:
+            df = pd.DataFrame(fit_data)
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            df.sort_values('timestamp', inplace=True)
+            df['NS_zero_fit'] = df['NS_fit'].apply(lambda x: 1 if pd.isna(x) else 0)
+            df['EW_zero_fit'] = df['EW_fit'].apply(lambda x: 1 if pd.isna(x) else 0)
+
+            df.set_index('timestamp', inplace=True)
+            rolling_stats = df.resample('24h').agg({
+                'NS_fit': ['mean', 'std', 'count'],
+                'EW_fit': ['mean', 'std', 'count'],
+                'NS_zero_fit': 'sum',
+                'EW_zero_fit': 'sum'
+            })
+
+            # if not rolling_stats.empty:
+            #     latest_stats = rolling_stats.iloc[-1]
+            #     window_start = rolling_stats.index[-1]
+            #     window_end = window_start + pd.Timedelta(hours=24) - pd.Timedelta(seconds=1)
+
+            #     if window_start.date() == window_end.date():
+            #         tqdm.write(f"Date: {window_start.strftime('%Y-%m-%d')}")
+            #     else:
+            #         tqdm.write(f"Datetime Window From: {window_start.strftime('%Y-%m-%d %H:%M:%S')} To: {window_end.strftime('%Y-%m-%d %H:%M:%S')}")
+            #     tqdm.write(f"  NS Mean: {latest_stats[('NS_fit', 'mean')]:.2f}, NS Std: {latest_stats[('NS_fit', 'std')]:.2f}, NS Count: {int(latest_stats[('NS_fit', 'count')])}")
+            #     tqdm.write(f"  EW Mean: {latest_stats[('EW_fit', 'mean')]:.2f}, EW Std: {latest_stats[('EW_fit', 'std')]:.2f}, EW Count: {int(latest_stats[('EW_fit', 'count')])}")
+            #     tqdm.write("-" * 40)
+            # na_fits_num += df['EW_zero_fit'].sum() + df['NS_zero_fit'].sum()
+        else:
+            tqdm.write(f"{Fore.RED}No valid fit data collected.{Style.RESET_ALL}")
+
+        subdir_pbar.update(1)
+
+    subdir_pbar.close()  # Close the outer progress bar once done
+
+# def process_files_in_directory():
+#     global na_fits_num
+
+#     # Pre-index all `.zst` files for fast lookup
+#     processed_files = set()
+#     for root, _, files in os.walk(INPUT_DIRECTORY):
+#         processed_files.update(
+#             os.path.join(root, f[:-4]) for f in files if f.endswith('.zst')
+#         )
+
+#     # Gather files from each subdirectory and process them as packets
+#     subdirectory_files = {}  # Dictionary to store files grouped by subdirectories
+#     for root, dirs, files in os.walk(INPUT_DIRECTORY):
+#         signal_files = [f for f in files if f.endswith(FILE_TYPE)]
+#         if signal_files:
+#             subdirectory_files[root] = [
+#                 os.path.join(root, os.path.splitext(f)[0]) for f in signal_files
+#             ]
+    
+#     if not subdirectory_files:
+#         print(f"No {FILE_TYPE} files found in {INPUT_DIRECTORY} directory!")
+#         return
+
+#     print(f"Will transform files grouped by {len(subdirectory_files)} subdirectories!")
+#     for i, subdir, file_list in enumerate(subdirectory_files.items()):
+#         unprocessed_files = [f for f in file_list if f not in processed_files]
+#         if not unprocessed_files:
+#             print(f"Skipping subdirectory {i}: {subdir} (All files already processed)")
+#             continue  # Skip to the next subdirectory
+
+#         print(f"\nProcessing {i} subdirectory: {subdir} with {len(file_list)} files")
+
+#         # Create a progress bar for files in the current subdirectory
+#         with tqdm(total=len(file_list), unit="file", bar_format='|\033[94m{bar}\033[0m| {percentage:3.0f}%', ncols=107, leave=False) as pbar:
+#             for input_filename in file_list:
+#                 transform_signal(input_filename, FILE_TYPE, do_plot=False)
+#                 pbar.update(1)
+
+#         if fit_data['timestamp']:
+#             # Create DataFrame from collected fit data
+#             df = pd.DataFrame(fit_data)
+#             df['timestamp'] = pd.to_datetime(df['timestamp'])
+#             df.sort_values('timestamp', inplace=True)
+
+#             # Add zero-fit indicators to the DataFrame
+#             df['NS_zero_fit'] = df['NS_fit'].apply(lambda x: 1 if pd.isna(x) else 0)
+#             df['EW_zero_fit'] = df['EW_fit'].apply(lambda x: 1 if pd.isna(x) else 0)
+
+#             # Resample data to 12-hour intervals and calculate statistics
+#             df.set_index('timestamp', inplace=True)
+#             rolling_stats = df.resample('24h').agg({
+#                 'NS_fit': ['mean', 'std', 'count'],
+#                 'EW_fit': ['mean', 'std', 'count'],
+#                 'NS_zero_fit': 'sum',
+#                 'EW_zero_fit': 'sum'
+#             })
+
+#             # Print results
+#             print("\nDaily Fit Statistics:")
+#             for timestamp, stats in rolling_stats.iterrows():
+#                 print(f"Date: {timestamp}")
+#                 print(f"  NS Mean: {stats[('NS_fit', 'mean')]:.2f}, NS Std: {stats[('NS_fit', 'std')]:.2f}, NS Count: {int(stats[('NS_fit', 'count')])}")
+#                 print(f"  EW Mean: {stats[('EW_fit', 'mean')]:.2f}, EW Std: {stats[('EW_fit', 'std')]:.2f}, EW Count: {int(stats[('EW_fit', 'count')])}")
+#                 print(f"  NS N/A Fits: {int(stats['NS_zero_fit'])} | EW N/A Fits: {int(stats['EW_zero_fit'])}")
+#                 print("-" * 40)
+#             na_fits_num += df['EW_zero_fit'].sum()+df['NS_zero_fit'].sum()
+#         else:
+#             print("No valid fit data collected.")
 
 import tkinter as tk
 from tkinter import filedialog
@@ -1087,6 +1418,7 @@ if __name__ == "__main__":
         print(f"Will process {FILE_TYPE} files from {INPUT_DIRECTORY} dir.")
         # Directory processing mode
         start_time = time.time()
+
         process_files_in_directory()
         save_zstd_time = time.time() - start_time
         if WORKED>0:
@@ -1096,12 +1428,10 @@ if __name__ == "__main__":
                 with open("error_log.txt", "w") as log_file:
                     log_file.write("Files with errors:\n")
                     log_file.write("\n".join(error_files))
-                print(f"Error log written to 'error_log.txt' with {len(error_files)} entries.")
+                print(f"Error log written to 'error_log.txt' with {len(error_files)} entries. (transformed {WORKED} files, n/a fit for {na_fits_num} signals)")
             else:
-                print("No errors encountered.")
+                print(f"No errors encountered. (transformed {WORKED} files, n/a fit for {na_fits_num} signals)")
             exit(0)
         else:
-            print(f"Nothing happened. ({WORKED})")
+            print(f"Nothing happened. (transformed {WORKED} files, n/a fit for {na_fits_num} signals)")
             exit(1)
-
-       
