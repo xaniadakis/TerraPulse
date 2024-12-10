@@ -3,11 +3,74 @@ from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from tqdm import tqdm
+import struct
 
 
 from PyQt5.QtWidgets import (
     QApplication, QVBoxLayout, QHBoxLayout, QWidget, QLabel, QPushButton, QListWidget, QCheckBox, QFileDialog, QAbstractItemView
 )
+
+def get_srd_info(fn):
+    """
+    Extracts metadata from an SRD file.
+
+    Parameters:
+    fn (str): The file name (path) of the SRD data file.
+
+    Returns:
+    tuple:
+        - date (float): The timestamp in seconds since the epoch, corrected if necessary.
+        - fs (float): Sampling frequency in Hz.
+        - ch (int): Channel information (0 or 1).
+        - vbat (float): Battery voltage in volts.
+        - ok (int): Success flag (1 if successful, 0 if not).
+    """
+    ok = 0
+    date = 0
+    DATALOGGERID = int("CAD0FFE51513FFDC", 16)
+
+    # Check file size
+    if os.path.getsize(fn) < (2 * 512):
+        return date, ok
+
+    with open(fn, 'rb') as fp:
+        # Read DATALOGGERID
+        ID = struct.unpack('Q', fp.read(8))[0]
+        if ID != DATALOGGERID:
+            print(f'File "{fn}" is not a logger record!')
+            return date, ok
+
+        # Read timestamp components
+        S = struct.unpack('B', fp.read(1))[0]
+        MN = struct.unpack('B', fp.read(1))[0]
+        H = struct.unpack('B', fp.read(1))[0]
+        DAY = struct.unpack('B', fp.read(1))[0]
+        D = struct.unpack('B', fp.read(1))[0]
+        M = struct.unpack('B', fp.read(1))[0]
+        Y = struct.unpack('B', fp.read(1))[0] + 1970
+
+        # Convert to datetime
+        date = datetime(Y, M, D, H, MN, S)
+
+        # Define correction dates and adjust date if necessary
+        t0 = datetime(2016, 1, 1)
+        t1 = datetime(2017, 8, 1)
+        t2 = datetime(2018, 8, 1)
+
+        if t0 < date < t1:
+            tslop = 480 / 600  # seconds-offset per day
+            days_diff = (date - t0).days
+            dt_seconds = days_diff * tslop
+            date -= timedelta(seconds=dt_seconds)
+
+        # Set to timestamp
+        date = date.timestamp()
+
+        # Successfully read info
+        ok = 1
+
+    return date, ok
+
 
 
 class FileSelectorApp(QWidget):
@@ -65,6 +128,10 @@ class FileSelectorApp(QWidget):
         self.mode_buttons["hel"] = QPushButton("HEL")
         self.mode_buttons["hel"].clicked.connect(lambda: self.select_mode("hel"))
         mode_layout.addWidget(self.mode_buttons["hel"])
+
+        self.mode_buttons["srd"] = QPushButton("SRD")
+        self.mode_buttons["srd"].clicked.connect(lambda: self.select_mode("srd"))
+        mode_layout.addWidget(self.mode_buttons["srd"])
 
         main_layout.addLayout(mode_layout)
 
@@ -156,6 +223,8 @@ class FileSelectorApp(QWidget):
         for base_dir in self.base_dirs:
             if self.selected_mode == "hel":
                 files.extend(self.find_files_hel(base_dir, self.selected_dirs, file_extension))
+            elif self.selected_mode == "srd":
+                files.extend(self.find_files_srd(base_dir, self.selected_dirs, "SRD"))
             else:
                 files.extend(self.find_files(base_dir, self.selected_dirs, file_extension))
 
@@ -170,6 +239,70 @@ class FileSelectorApp(QWidget):
 
         # Plot timeline
         self.plot_timeline(continuous_periods, total_start, total_end, interval_minutes)
+
+    def find_files_srd(self, base_dir, selected_dirs, file_extension):
+        all_files = []
+        total_dirs = 0
+        last_timestamp = None  # Variable to keep track of the last timestamp
+
+        # Count total directories within selected paths
+        with tqdm(desc=f"Counting directories in {base_dir}", unit="dir") as pbar:
+            for subdir in selected_dirs:
+                subdir_path = os.path.join(base_dir, subdir)
+                for _, dirs, _ in os.walk(subdir_path):
+                    total_dirs += len(dirs)
+                    pbar.update(1)
+
+        # Search only in selected directories
+        with tqdm(total=total_dirs, desc=f"Scanning directories in {base_dir}", unit="dir") as pbar:
+            for subdir in selected_dirs:
+                subdir_path = os.path.join(base_dir, subdir)
+                for root, dirs, files in os.walk(subdir_path):
+                    for i, file in enumerate(files):
+                        if file.endswith(file_extension):  # Check if the file has the right extension
+                            file_path = os.path.join(root, file)
+
+                            # Check if this is the first file or if it's sequential
+                            if last_timestamp and self.is_sequential(file, files[i-1]):
+                                # If it's sequential, just add 10 minutes to the last timestamp
+                                last_timestamp += timedelta(minutes=10)
+                                timestamp = last_timestamp
+                                # print(f"seq: {timestamp.strftime("%Y%m%d%H%M")}, last: {last_timestamp.strftime("%Y%m%d%H%M")}")
+                            else:
+                                # If it's not sequential, call get_srd_info for the timestamp
+                                date, ok = get_srd_info(file_path)
+                                if ok:
+                                    timestamp = datetime.fromtimestamp(date)
+                                    last_timestamp = timestamp  # Update last_timestamp
+                            # Format timestamp to YYYYMMDDHHMM
+                            timestamp_str = timestamp.strftime("%Y%m%d%H%M")
+                            all_files.append(timestamp_str+".SRD")
+                        pbar.update(1)
+
+        # Sort files by timestamp (date)
+        return sorted(all_files)
+
+    def is_sequential(self, current_file, previous_file):
+        """
+        Check if the current file's filename is sequential to the previous file's filename.
+        Assumes filenames are numeric and have the pattern like "00001.SRD", "00002.SRD", etc.
+        
+        Parameters:
+        current_file (str): The current file's name (e.g., "00002.SRD").
+        previous_file (str): The previous file's name (e.g., "00001.SRD").
+        
+        Returns:
+        bool: True if the files are sequential, False otherwise.
+        """
+        try:
+            # Extract numeric part of filenames
+            current_index = int(current_file.split('.')[0])
+            previous_index = int(previous_file.split('.')[0])
+
+            # Check if the current file index is exactly +1 from the previous file
+            return current_index == previous_index + 1
+        except ValueError:
+            return False  # In case of filename parsing error, assume they are not sequential
 
 
     def find_files_hel(self, base_dir, selected_dirs, file_extension):
@@ -251,7 +384,7 @@ class FileSelectorApp(QWidget):
 
             if current_period:
                 continuous_periods.append(current_period)
-
+        # print(f"cont periods: {len(continuous_periods)}")
         return continuous_periods
 
 
@@ -279,7 +412,7 @@ class FileSelectorApp(QWidget):
         num_years = len(sorted_years)
 
         # Dynamically adjust the figure height for compactness but ensure it's large enough for visibility
-        fig_height = min(1.0 * num_years, 12)  # Cap the total height to a reasonable desktop size
+        fig_height = min(1.5 * num_years, 12)  # Cap the total height to a reasonable desktop size
         fig, axes = plt.subplots(num_years, 1, figsize=(15, fig_height))  # No sharex=True
 
         # If there is only one year, make sure axes is still iterable
@@ -354,6 +487,8 @@ class FileSelectorApp(QWidget):
         # Set the figure's title to show the total number of days and the file type
         if file_type == "HEL":
             plt.suptitle(f"Hellenic Logger Processed Data (available: {total_days} days)", fontsize=14, fontweight='bold', y=0.98)
+        elif file_type == "SRD":
+            plt.suptitle(f"Hellenic Logger Original Data (available: {total_days} days)", fontsize=14, fontweight='bold', y=0.98)
         elif file_type == "POL":
             plt.suptitle(f"Polski Logger Processed Data (available: {total_days} days)", fontsize=14, fontweight='bold', y=0.98)
         elif file_type == "DAT":
