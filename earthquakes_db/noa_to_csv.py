@@ -2,9 +2,12 @@ import csv
 import os
 from geopy.distance import geodesic
 
-def distance_between_locations(parnon_location=(37.2609, 22.5847), earthquake_location=(37.7749, -122.4194)):
+kalpaki_location = (39.9126, 20.5888)
+parnon_location=(37.2609, 22.5847)
+
+def distance_between_locations(coil_location, earthquake_location=(37.7749, -122.4194)):
     # Distance in kilometers
-    distance = geodesic(parnon_location, earthquake_location).kilometers
+    distance = geodesic(coil_location, earthquake_location).kilometers
     print(f"Distance: {distance:.2f} km")
     return distance
 

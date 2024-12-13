@@ -4,7 +4,7 @@ from geopy.distance import geodesic
 import pandas as pd
 from tqdm import tqdm
 
-output_dir = "./output"
+output_dir = "/mnt/c/Users/shumann/Documents/GaioPulse/earthquakes_db/output"
 
 # Boolean constant to decide the distance calculation method
 USE_HYPOTENUSE = True
@@ -41,13 +41,14 @@ combined_df['DEPTH'] = pd.to_numeric(combined_df['DEPTH'], errors='coerce')
 
 # Define Parnon location
 parnon_location = (37.2609, 22.5847)
+kalpaki_location = (39.9126, 20.5888)
 
 # Calculate distance for each row
 def calculate_distance(row):
     event_location = (row['LAT'], row['LONG'])
     depth = row['DEPTH']  # Depth in kilometers
     if pd.notnull(event_location[0]) and pd.notnull(event_location[1]):
-        surface_distance = geodesic(parnon_location, event_location).kilometers
+        surface_distance = geodesic(kalpaki_location, event_location).kilometers
         if USE_HYPOTENUSE and pd.notnull(depth):
             return sqrt(surface_distance**2 + depth**2)  # Hypotenuse distance
         return surface_distance  # Surface distance
@@ -80,16 +81,30 @@ combined_df['DOBROWOLSKY'] = list(
     tqdm(combined_df.apply(apply_dobrowolsky_law, axis=1), desc="Applying Dobrowolsky", total=len(combined_df))
 )
 
+# Add a unique ID column to combined DataFrame
+print("Adding unique ID column...")
+combined_df.insert(0, 'ID', range(1, len(combined_df) + 1))
+
 # Filter rows where Dobrowolsky law applies
 print("Filtering rows where Dobrowolsky law applies...")
 dobrowolsky_df = combined_df[combined_df['DOBROWOLSKY'] == 1]
 
-# Sort by date descending (assuming a 'DATE' column exists)
+
+dobrowolsky_df["DATE"] = pd.to_datetime(dobrowolsky_df["DATE"])
+# Parse TIME as a timedelta (hours, minutes, seconds)
+dobrowolsky_df["TIME"] = pd.to_timedelta(dobrowolsky_df["TIME"].str.replace(' ', ':'))
+# Add TIME as timedelta to DATE to create DATETIME
+dobrowolsky_df["DATETIME"] = dobrowolsky_df["DATE"] + dobrowolsky_df["TIME"]
+# Drop the DATE, TIME columns
+dobrowolsky_df.drop(columns=["DATE", "TIME"], inplace=True)
+# Move the DATETIME column to the second position
+cols = list(dobrowolsky_df.columns)
+cols.insert(1, cols.pop(cols.index("DATETIME")))  # Move DATETIME to the second position
+dobrowolsky_df = dobrowolsky_df[cols]
+
+# Sort by date ascending
 print("Sorting Dobrowolsky-valid rows by date...")
-dobrowolsky_df.loc[:, 'DATE'] = pd.to_datetime(
-    dobrowolsky_df['DATE'], format='%Y %b %d', errors='coerce'
-)
-dobrowolsky_df = dobrowolsky_df.sort_values(by='DATE', ascending=False)
+dobrowolsky_df = dobrowolsky_df.sort_values(by='DATETIME', ascending=True)
 
 # Save the filtered DataFrame to a new CSV file
 dobrowolsky_csv = os.path.join(output_dir, "dobrowolsky_valid_rows.csv")
