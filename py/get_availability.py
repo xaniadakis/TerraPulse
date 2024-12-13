@@ -485,11 +485,11 @@ class FileSelectorApp(QWidget):
 
         # Check if file does not exist
         if os.path.exists(file_path):
-            print(f"The file '{file_path}' exists.")
+            # print(f"The file '{file_path}' exists.")
             dobrowolsky_df = pd.read_csv(file_path)
             return dobrowolsky_df.drop(columns=['DOBROWOLSKY'])
         else:
-            print(f"The file '{file_path}' does not exist. Will generate it.")
+            # print(f"The file '{file_path}' does not exist. Will generate it.")
 
             # Boolean constant to decide the distance calculation method
             USE_HYPOTENUSE = True
@@ -666,7 +666,7 @@ class FileSelectorApp(QWidget):
             # Group data by year
             earthquakes_by_year = dobrowolsky_df.groupby('YEAR')
 
-        print(f"Start: {total_start}, End: {total_end}")
+        # print(f"Start: {total_start}, End: {total_end}")
 
         # Assuming self.selected_mode contains the file type (e.g., 'dat', 'pol', 'hel')
         file_type = self.selected_mode.upper()  # Capitalize the file type for display
@@ -713,7 +713,7 @@ class FileSelectorApp(QWidget):
             days_with_data = set()
 
             with tqdm(total=len(year_periods), desc=f"Plotting timeline for {year}", unit="period") as pbar:
-                print(f"Year {year} has {len(year_periods)} periods")
+                # print(f"Year {year} has {len(year_periods)} periods")
                 for period in year_periods:
                     try:
                         # Extract and validate the start timestamp
@@ -796,13 +796,13 @@ class FileSelectorApp(QWidget):
                         # Example usage:
                         arrow_linewidth = self.scale_linewidth(impact=impact)
 
-                        print(f" quake: {quake_id} has width of: {arrow_linewidth} with impact={impact}")
+                        # print(f" quake: {quake_id} has width of: {arrow_linewidth} with impact={impact}")
                         # Plot the earthquake arrow
                         arrow = ax.annotate(
                             '',  # No text, just an arrow
                             xy=(quake_date, 0.5),  # End of the arrow
                             xytext=(quake_date, 0.8),  # Start of the arrow
-                            arrowprops=dict(facecolor='brown', arrowstyle='-|>', lw=arrow_linewidth, color='brown'),
+                            arrowprops=dict(arrowstyle='-|>', lw=arrow_linewidth, color='brown'),
                         )
                         
                         # Plot the earthquake ID as a text label
