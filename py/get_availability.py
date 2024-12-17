@@ -27,6 +27,7 @@ from tkinter import Toplevel
 import numpy as np
 from matplotlib.offsetbox import AnchoredText
 import matplotlib.patches as mpatches
+import time
 
 from PyQt5.QtWidgets import (
     QApplication, QVBoxLayout, QHBoxLayout, QWidget, QLabel, QPushButton, QListWidget, QCheckBox, QFileDialog, QAbstractItemView, QComboBox
@@ -201,6 +202,10 @@ class FileSelectorApp(QWidget):
             self.process_button.setEnabled(False)
 
     def process_files(self):
+
+        # Start timer
+        start_time = time.time()
+
         self.selected_dirs = [self.directories_list.item(i).text() for i in range(self.directories_list.count())
                             if self.directories_list.item(i).isSelected()]
 
@@ -216,25 +221,27 @@ class FileSelectorApp(QWidget):
         files = []
         for base_dir in self.base_dirs:
             if self.selected_mode == "hel":
-                files.extend(self.find_files_hel(base_dir, self.selected_dirs, file_extension))
+                files.extend(self.find_files_hel(base_dir, self.selected_dirs, file_extension.lower()))
             elif self.selected_mode == "srd":
-                files.extend(self.find_files_srd(base_dir, self.selected_dirs, "SRD"))
+                files.extend(self.find_files_srd(base_dir, self.selected_dirs, "SRD".lower()))
             else:
-                files.extend(self.find_files(base_dir, self.selected_dirs, file_extension))
+                files.extend(self.find_files(base_dir, self.selected_dirs, file_extension.lower()))
 
         if not files:
             print(f"No {self.selected_mode} files found.")
             return
 
         # Find continuous periods and their overall start and end times
-        continuous_periods = self.find_continuous_periods(files, interval_minutes)
+        continuous_periods, num_files = self.find_continuous_periods(files, interval_minutes)
         total_start = datetime.strptime(files[0][0].split(os.sep)[-1].split('.')[0][:12], "%Y%m%d%H%M")
         total_end = datetime.strptime(files[-1][0].split(os.sep)[-1].split('.')[0][:12], "%Y%m%d%H%M") + timedelta(minutes=interval_minutes)
 
-        # Plot timeline
-        self.plot_timeline(continuous_periods, total_start, total_end, interval_minutes)
+        # num_files = len(files)
 
-    def get_srd_info(fn):
+        # Plot timeline
+        self.plot_timeline(continuous_periods, total_start, total_end, num_files, interval_minutes, start_time)
+
+    def get_srd_info(self, fn):
         """
         Extracts metadata from an SRD file.
 
@@ -306,7 +313,7 @@ class FileSelectorApp(QWidget):
         last_timestamp = None  # Variable to keep track of the last timestamp
 
         # Count total directories within selected paths
-        with tqdm(desc=f"Counting directories in {base_dir}", unit="dir") as pbar:
+        with tqdm(desc=f"Counting directories in chosen {base_dir}", unit="dir") as pbar:
             for subdir in selected_dirs:
                 subdir_path = os.path.join(base_dir, subdir)
                 for _, dirs, _ in os.walk(subdir_path):
@@ -314,14 +321,15 @@ class FileSelectorApp(QWidget):
                     pbar.update(1)
 
         # Search only in selected directories
-        with tqdm(total=total_dirs, desc=f"Scanning files in {base_dir}", unit="files") as pbar:
+        with tqdm(total=total_dirs, desc=f"Looking for {file_extension} files in {base_dir}", unit="files") as pbar:
             for subdir in selected_dirs:
                 subdir_path = os.path.join(base_dir, subdir)
                 for root, dirs, files in os.walk(subdir_path):
+                    files = [file.lower() for file in files]      
                     for i, file in enumerate(files):
                         if file.endswith(file_extension):  # Check if the file has the right extension
                             file_path = os.path.join(root, file)
-
+                            # print(f"dir: {subdir_path}")
                             # Check if this is the first file or if it's sequential
                             if last_timestamp and self.is_sequential(file, files[i-1]):
                                 # If it's sequential, just add 10 minutes to the last timestamp
@@ -330,14 +338,14 @@ class FileSelectorApp(QWidget):
                                 # print(f"seq: {timestamp.strftime("%Y%m%d%H%M")}, last: {last_timestamp.strftime("%Y%m%d%H%M")}")
                             else:
                             # If it's not sequential, call get_srd_info for the timestamp
-                                date, ch, ok = get_srd_info(file_path)
+                                date, ch, ok = self.get_srd_info(file_path)
                                 if ok:
                                     timestamp = datetime.fromtimestamp(date)
                                     last_timestamp = timestamp  # Update last_timestamp
                             # Format timestamp to YYYYMMDDHHMM
                             timestamp_str = timestamp.strftime("%Y%m%d%H%M")
                             # all_files.append(timestamp_str+".SRD")
-                            all_files.append((timestamp_str + ".SRD", ch+1))
+                            all_files.append((timestamp_str + ".SRD", ch+1, subdir_path))
                         pbar.update(1)
 
         # Sort files by timestamp (date)
@@ -371,7 +379,7 @@ class FileSelectorApp(QWidget):
         total_dirs = 0
 
         # Count total directories within selected paths
-        with tqdm(desc=f"Counting directories in {base_dir}", unit="dir") as pbar:
+        with tqdm(desc=f"Counting directories in chosen {base_dir}", unit="dir") as pbar:
             for subdir in selected_dirs:
                 subdir_path = os.path.join(base_dir, subdir)
                 for _, dirs, _ in os.walk(subdir_path):
@@ -379,11 +387,12 @@ class FileSelectorApp(QWidget):
                     pbar.update(1)
 
         # Search only in selected directories
-        with tqdm(total=total_dirs, desc=f"Scanning directories in {base_dir}", unit="dir") as pbar:
+        with tqdm(total=total_dirs, desc=f"Looking for {file_extension} in {base_dir}", unit="dir") as pbar:
             for subdir in selected_dirs:
                 subdir_path = os.path.join(base_dir, subdir)
                 for root, dirs, files in os.walk(subdir_path):
-                    first_file_flag = True          
+                    first_file_flag = True    
+                    files = [file.lower() for file in files]        
                     for file in files:
                         if first_file_flag:
                             data = np.loadtxt(os.path.join(root, file), delimiter='\t')
@@ -405,7 +414,7 @@ class FileSelectorApp(QWidget):
         total_dirs = 0
 
         # Count total directories within selected paths
-        with tqdm(desc=f"Counting directories in {base_dir}", unit="dir") as pbar:
+        with tqdm(desc=f"Counting directories in chosen {base_dir}", unit="dir") as pbar:
             for subdir in selected_dirs:
                 subdir_path = os.path.join(base_dir, subdir)
                 for _, dirs, _ in os.walk(subdir_path):
@@ -413,11 +422,12 @@ class FileSelectorApp(QWidget):
                     pbar.update(1)
 
         # Search only in selected directories
-        with tqdm(total=total_dirs, desc=f"Scanning directories in {base_dir}", unit="dir") as pbar:
+        with tqdm(total=total_dirs, desc=f"Looking for {file_extension} in {base_dir}", unit="dir") as pbar:
             for subdir in selected_dirs:
                 subdir_path = os.path.join(base_dir, subdir)
                 for root, dirs, files in os.walk(subdir_path):
-                    first_file_flag = True          
+                    first_file_flag = True     
+                    files = [file.lower() for file in files]       
                     for file in files:
                         if first_file_flag:
                             data = np.loadtxt(os.path.join(root, file), delimiter='\t')
@@ -432,7 +442,7 @@ class FileSelectorApp(QWidget):
         continuous_periods = []
         current_period = []
         last_time = None
-
+        counter = 0
         with tqdm(total=len(files), desc="Grouping files", unit="file") as pbar:
             for file in files:
                 try:
@@ -446,14 +456,15 @@ class FileSelectorApp(QWidget):
 
                 if last_time and (timestamp - last_time > timedelta(minutes=interval_minutes)):
                     if current_period:
-                        continuous_periods.append((current_period, file[1]))
+                        continuous_periods.append((current_period, file[1]))#, file[2]))
                     current_period = []
                 current_period.append(file[0])
+                counter += 1
                 last_time = timestamp
                 pbar.update(1)
 
             if current_period:
-                continuous_periods.append((current_period, file[1]))
+                continuous_periods.append((current_period, file[1]))#, file[2]))
 
         # Divide periods by years
         # periods_by_year = {}
@@ -476,7 +487,7 @@ class FileSelectorApp(QWidget):
         #         time_difference = first_time_next - last_time
         #         print(f"Period {i + 1} to {i + 2}: {time_difference}")
 
-        return continuous_periods
+        return continuous_periods, counter
 
     def prepare_dobrowolsky_df(self):
         print(f"Shall get earthquakes for {self.selected_region} location!")
@@ -644,7 +655,7 @@ class FileSelectorApp(QWidget):
         normalized = (impact - min_impact) / (max_impact - min_impact)
         return min_width + normalized * (max_width - min_width)
 
-    def plot_timeline(self, continuous_periods, total_start, total_end, interval_minutes=5):
+    def plot_timeline(self, continuous_periods, total_start, total_end, num_files, interval_minutes=5, start_time=None):
 
         dobrowolsky_df = self.prepare_dobrowolsky_df()
 
@@ -680,7 +691,7 @@ class FileSelectorApp(QWidget):
                 start_year = datetime.strptime(period[0][0].split(os.sep)[-1].split('.')[0][:12], "%Y%m%d%H%M").year
                 if start_year not in periods_by_year:
                     periods_by_year[start_year] = []
-                periods_by_year[start_year].append((period[0], period[1]))
+                periods_by_year[start_year].append((period[0], period[1], period[2]))
             except ValueError as e:
                 print(f"Skipping period due to invalid format: {period} ({e})")
                 continue
@@ -689,7 +700,7 @@ class FileSelectorApp(QWidget):
         num_years = len(sorted_years)
 
         # Dynamically adjust the figure height for compactness but ensure it's large enough for visibility
-        fig_height = min(2 * num_years, 12)  # Cap the total height to a reasonable desktop size
+        fig_height = min(2 * num_years, 10)  # Cap the total height to a reasonable desktop size
         fig, axes = plt.subplots(num_years, 1, figsize=(15, fig_height))  # No sharex=True
 
         # If there is only one year, make sure axes is still iterable
@@ -724,6 +735,10 @@ class FileSelectorApp(QWidget):
                         end_str = period[0][-1].split(os.sep)[-1].split('.')[0][:12]
                         end = datetime.strptime(end_str, "%Y%m%d%H%M") + timedelta(minutes=interval_minutes)
 
+                        # Retrieve the path for this period
+                        # directory_path = os.path.dirname(period[2])
+                        # print(f"dir: {directory_path}")
+
                         # Add days with data to the set
                         current_day = start
                         while current_day <= end:
@@ -740,13 +755,19 @@ class FileSelectorApp(QWidget):
                         if period[1] == 1:
                             line_sc, = ax.plot([start, end], [0.5, 0.5], color='blue', lw=6, solid_capstyle='butt', label="Single Channel")
                             if "Single Channel" not in handled_labels:
-                                handled_labels.add("Single Channel")
+                                handled_labels.add(f"Single Channel")
+                                    # Store only valid line objects
+                            # if line_sc is not None:
+                            #     period_annotations[line_sc] = directory_path
                         elif period[1] == 2:
                             line_dc, = ax.plot([start, end], [0.5, 0.5], color='green', lw=6, solid_capstyle='butt', label="Dual Channel")
                             if "Dual Channel" not in handled_labels:
-                                handled_labels.add("Dual Channel")
+                                handled_labels.add(f"Dual Channel")
+                            # if line_dc is not None:
+                            #     period_annotations[line_dc] = directory_path
                         else:
                             print(f"Invalid number of channels: {period[1]} found!")
+
                         last_end = end
                     except ValueError as e:
                         print(f"Skipping invalid file in period: {period} ({e})")
@@ -850,18 +871,6 @@ class FileSelectorApp(QWidget):
                         )
                         # ax.legend(handles=[arrow_marker], loc='lower center')  # Add to legend
 
-
-            # Attach mplcursors for hover interactivity
-            # cursor = mplcursors.cursor(hover=True)
-
-            # @cursor.connect("add")
-            # def on_hover(sel):
-            #     for annotation, info_text in quake_annotations:
-            #         if sel.artist == annotation.arrow_patch:  # Match the arrow object
-            #             sel.annotation.set_text(info_text)
-            #             sel.annotation.get_bbox_patch().set(alpha=0.8, facecolor='lightyellow')
-            #             break
-
             # Set x-axis limits and ticks for each subplot
             ax.set_xlim(year_start, year_end)
 
@@ -908,13 +917,13 @@ class FileSelectorApp(QWidget):
         
         # Set the figure's title to show the total number of days and the file type
         if file_type == "HEL":
-            plt.suptitle(f"Hellenic Logger Processed Data (available in total: {total_days} days)", fontsize=14, fontweight='bold', y=0.98)
+            plt.suptitle(f"Hellenic Logger Processed Data (available in total: {total_days} days, {num_files} signals)", fontsize=14, fontweight='bold', y=0.98)
         elif file_type == "SRD":
-            plt.suptitle(f"Hellenic Logger Original Data (available in total: {total_days} days)", fontsize=14, fontweight='bold', y=0.98)
+            plt.suptitle(f"Hellenic Logger Original Data (available in total: {total_days} days, {num_files} signals)", fontsize=14, fontweight='bold', y=0.98)
         elif file_type == "POL":
-            plt.suptitle(f"Polski Logger Processed Data (available in total: {total_days} days)", fontsize=14, fontweight='bold', y=0.98)
+            plt.suptitle(f"Polski Logger Processed Data (available in total: {total_days} days, {num_files} signals)", fontsize=14, fontweight='bold', y=0.98)
         elif file_type == "DAT":
-            plt.suptitle(f"Polski Logger Original Data (available in total: {total_days} days)", fontsize=14, fontweight='bold', y=0.98)
+            plt.suptitle(f"Polski Logger Original Data (available in total: {total_days} days, {num_files} signals)", fontsize=14, fontweight='bold', y=0.98)
         plt.tight_layout(pad=3.0)  # Adjust padding to ensure the title doesn't overlap
 
         # Adjust labels and layout after plotting all years
@@ -986,6 +995,10 @@ class FileSelectorApp(QWidget):
         fig.canvas.mpl_connect("button_press_event", on_click)
 
         fig.legend(legend_lines, legend_labels, loc="lower center", ncol=3, fontsize=10)
+        
+        if start_time != None:
+            print(f"The whole process took: {time.time() - start_time:.2f} seconds")
+
 
         # Adjust labels and layout after plotting all years
         plt.xlabel("Months", fontsize=10, color="white")  # Set the color of the x-axis label

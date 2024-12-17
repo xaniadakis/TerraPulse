@@ -18,6 +18,7 @@ from colorama import Fore, Style
 import os
 import pandas as pd
 from pathlib import Path
+import mplcursors  # Add this library for interactivity
 
 NUM_HARMONICS = 7  # Define the number of harmonics expected
 FMIN = 3
@@ -1152,6 +1153,11 @@ def transform_signal(input_filename, file_extension, do_plot=False):
             plt.xlabel("Frequency [Hz]")
             plt.grid(ls=':')
             plt.legend()
+            
+            # Add mplcursors for interactivity
+            cursor = mplcursors.cursor(hover=True)
+            cursor.connect("add", lambda sel: sel.annotation.set_text(f"x={sel.target[0]:.2f}, y={sel.target[1]:.2f}"))
+
             plt.tight_layout()
             plt.show()
 

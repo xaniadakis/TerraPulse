@@ -45,13 +45,16 @@ void print_progress(int progress, int total) {
     time_t current_time = time(NULL);
     double elapsed = difftime(current_time, start_time);
     double remaining = (elapsed / progress) * (total - progress);
+    if (remaining < 0 || remaining > 999999 || progress<70) remaining = 0;  // Sanity check
 
     printf("\r|");
     for (int i = 0; i < PROGRESS_BAR_WIDTH; i++)
         printf(i < bar_width ? "\033[32m█\033[0m" : "\033[91m░\033[0m");
-    
-    printf("| %d/%d | Elapsed: %02d:%02d | Left: %02d:%02d", 
-           progress, total, (int)(elapsed/60), (int)elapsed % 60, (int)(remaining/60), (int)remaining % 60);
+
+    printf("| %d/%d | Elapsed: %02d:%02d:%02d | Left: %02d:%02d:%02d", 
+           progress, total, 
+           (int)(elapsed / 3600), (int)(elapsed / 60) % 60, (int)elapsed % 60,  // Elapsed (hours, mins, secs)
+           (int)(remaining / 3600), (int)(remaining / 60) % 60, (int)remaining % 60);  // Remaining (hours, mins, secs)
     fflush(stdout);
 }
 
@@ -228,7 +231,7 @@ void count_files(const char *dir_path, const char *file_type) {
             snprintf(path, sizeof(path), "%s/%s", dir_path, entry->d_name);
             count_files(path, file_type);
         } else {
-            if (strstr(entry->d_name, file_type)) {
+            if (strcasestr(entry->d_name, file_type)) {
                 total_files++;
             }
         }
@@ -252,7 +255,7 @@ void traverse_directory(const char *dir_path) {
             traverse_directory(path);
         } else {
             const char *file_type = current_mode == HELLENIC_LOGGER ? HELLENIC_LOGGER_FILE_TYPE : POLSKI_LOGGER_FILE_TYPE;
-            if (strstr(entry->d_name, file_type)) {
+            if (strcasestr(entry->d_name, file_type)) {
                 snprintf(path, sizeof(path), "%s/%s", dir_path, entry->d_name);
                 if (current_mode == HELLENIC_LOGGER) {
                     process_srd_file(path);
@@ -273,14 +276,15 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Usage: %s <mode: pol|hel> <input_dir1> <input_dir2> ... <input_dirN> <output_dir>\n", argv[0]);
         return 1;
     }
-
+    start_time = time(NULL);
     const char *mode_arg = argv[1];
     NUM_INPUT_DIRS = argc - 3;
     INPUT_DIRS = (const char **)malloc(NUM_INPUT_DIRS * sizeof(char *));
     for (int i = 0; i < NUM_INPUT_DIRS; i++) {
         INPUT_DIRS[i] = argv[i + 2];
     }
-    OUTPUT_DIR = argv[3];
+    OUTPUT_DIR = argv[argc - 1]; // Last argument is the output directory
+    // OUTPUT_DIR = argv[3];
 
     if (strcmp(mode_arg, "hel") == 0) {
         current_mode = HELLENIC_LOGGER;

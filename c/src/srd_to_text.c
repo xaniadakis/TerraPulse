@@ -14,8 +14,19 @@
 #define DOWNSAMPLING_FACTOR 30
 #define VERSION "1.0"  // Specify the version here
 
-const char *INPUT_DIR = "/mnt/e/KalpakiSortedData/160607_2";
-const char *OUTPUT_DIR = "/mnt/c/Users/shumann/Documents/GaioPulse/srd_output";
+#ifndef INPUT_DIR
+#define INPUT_DIR "/mnt/e/KalpakiSortedData/160607_2" 
+#endif
+
+#ifndef OUTPUT_DIR
+#define OUTPUT_DIR "/mnt/c/Users/shumann/Documents/GaioPulse/srd_output" 
+#endif
+
+#define ORIGIN_FILE_TYPE ".SRD"
+#define NEW_FILE_TYPE ".hel"
+
+// const char *INPUT_DIR = "/mnt/e/KalpakiSortedData/160607_2";
+// const char *OUTPUT_DIR = "/mnt/c/Users/shumann/Documents/GaioPulse/srd_output";
 size_t OUTPUT_DIR_PATH_LEN = 0;
 size_t OUTPUT_FILE_PATH_LEN = 0;
 int total_files = 0, processed_files = 0;
@@ -70,7 +81,7 @@ void create_metadata_file(const char *output_dir_path, int file_count) {
     }
 }
 
-void process_file(const char *file_path) {
+void process_srd_file(const char *file_path) {
 
     SrdData data = read_srd_file(file_path);
 
@@ -114,7 +125,7 @@ void process_file(const char *file_path) {
     create_dir(dir_path); // Create the directory
 
     // Append the filename to the directory path
-    snprintf(output_path, OUTPUT_FILE_PATH_LEN, "%s/%s.txt", dir_path, date_str);
+    snprintf(output_path, OUTPUT_FILE_PATH_LEN, "%s/%s%s", dir_path, date_str, NEW_FILE_TYPE);
     downsample_srd_signal(data, downsample_factor, output_path);
 
     // Free the allocated memory
@@ -140,7 +151,7 @@ void count_files(const char *dir_path) {
         if (entry->d_type == DT_DIR && strcmp(entry->d_name, ".") && strcmp(entry->d_name, "..")) {
             snprintf(path, sizeof(path), "%s/%s", dir_path, entry->d_name);
             count_files(path);
-        } else if (strstr(entry->d_name, ".SRD")) {
+        } else if (strcasestr(entry->d_name, ORIGIN_FILE_TYPE)) {
             total_files++;
         }
     }
@@ -156,19 +167,34 @@ void traverse_directory(const char *dir_path) {
         if (entry->d_type == DT_DIR && strcmp(entry->d_name, ".") && strcmp(entry->d_name, "..")) {
             snprintf(path, sizeof(path), "%s/%s", dir_path, entry->d_name);
             traverse_directory(path);
-        } else if (strstr(entry->d_name, ".SRD")) {
+        } else if (strcasestr(entry->d_name, ORIGIN_FILE_TYPE)) {
             snprintf(path, sizeof(path), "%s/%s", dir_path, entry->d_name);
-            process_file(path);
+            process_srd_file(path);
         }
     }
     closedir(dir);
 }
 
 int main() {
+    int error = 0;
+    struct stat st;
+    if (stat(INPUT_DIR, &st) != 0 || !S_ISDIR(st.st_mode))
+        error += 1;
+    if (stat(OUTPUT_DIR, &st) != 0 || !S_ISDIR(st.st_mode))
+        error += 1;
+    if(error){
+        if(error==1)
+            printf("Error: Input Directory: '%s' does not exist or is not a directory.\n", INPUT_DIR);
+        else if(error==2)
+            printf("Error: Neither the Input directory: '%s' nor the Output directory: '%s' exists.\n", INPUT_DIR, OUTPUT_DIR);
+        return 1;
+    }
+    printf("Will read from directory %s into %s.\n", INPUT_DIR, OUTPUT_DIR);
+
     printf("Counting files...\n");
     count_files(INPUT_DIR);
     if (total_files == 0) {
-        printf("No .dat files found.\n");
+        printf("No %s files found inside %s.\n", ORIGIN_FILE_TYPE, INPUT_DIR);
         return 0;
     }
     printf("Total files: %d\n", total_files);

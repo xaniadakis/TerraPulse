@@ -1012,7 +1012,7 @@ def print_srd_data(fn):
     downsampling_factor = 24
 
     start_reading = time.time()
-    t, fs, x, y = read_srd_file(fn)
+    date, fs, x, y = read_srd_file(fn)
     reading_time = time.time() - start_reading
     print(f"Time to read srd: {reading_time:.4f} seconds")
     
@@ -1033,21 +1033,75 @@ def print_srd_data(fn):
 
     HNS_downsampled = np.loadtxt('srd.txt')
 
-    plot_signal(HNS_downsampled, [], decimated_frequency, t)
+    # plot_signal(HNS_downsampled, [], decimated_frequency, t)
+    # def plot_signal(HNS, HEW, frequency, date):
+
+    t = np.linspace(0, len(HNS_downsampled) / decimated_frequency, len(HNS_downsampled))
+
+    # Create a single figure with two subplots
+    fig, axes = plt.subplots(2, 1, figsize=(10, 10))
+    fig.suptitle(datetime.fromtimestamp(date), fontsize=16)
+
+    # First subplot: Time series plot
+    axes[0].set_title("Time Series")
+    axes[0].plot(t, HNS_downsampled, 'r', lw=1, label=r'$B_{NS}$')
+    if len(HEW_downsampled) > 0:
+        axes[0].plot(t, HEW_downsampled, 'b', lw=1, label=r'$B_{EW}$')
+    axes[0].set_ylabel("B [V]")
+    axes[0].set_xlabel("Time [sec]")
+    axes[0].set_xlim([0, 600])
+    axes[0].grid(ls=':')
+    axes[0].legend()
+
+    # Second subplot: Power Spectral Density (PSD) plot
+    F, Pxx, Pyy, L1, L2, R1, R2, gof1, gof2 = srd_spec(date, fs, x, y)
+    axes[1].plot(F, Pxx, label='PSD')
+    axes[1].plot(F, L1, label='Lorentzian Fit')
+    axes[1].set_xlabel('Frequency [Hz]')
+    axes[1].set_ylabel('Power Spectral Density [pT^2/Hz]')
+    axes[1].set_title('Power Spectral Density (PSD) using Welch\'s Method')
+    axes[1].grid()
+    axes[1].set_xlim(0, 50)# Set x-ticks every 5 for the second subplot
+    axes[1].set_xticks(np.arange(0, max(F)+5, 5))
+    axes[1].legend()
+
+    # Adjust layout and show the figure
+    plt.tight_layout()
+    plt.show()
+
     print(f"FS: {fs}")
-    F, Pxx, Pyy, L1, L2, R1, R2, gof1, gof2 = srd_spec(t, fs, x, y)
     print(f"F {F.shape}, Pxx {Pxx.shape}")
 
-    # Plotting the power spectral density (PSD)
-    plt.figure()
-    plt.plot(F, Pxx)
-    plt.plot(F, L1, label='Lorentzian Fit')
-    plt.xlabel('Frequency [Hz]')
-    plt.ylabel('Power Spectral Density [pT^2/Hz]')
-    plt.title('Power Spectral Density (PSD) using Welch\'s Method')
-    plt.grid()
-    plt.xlim(0,50)
-    plt.show()
+
+    # print(f"date: {date}, fs: {fs}, x: {x}, y: {y}")
+    # t = np.linspace(0, len(HNS_downsampled) / decimated_frequency, len(HNS_downsampled))
+    # plt.figure(figsize=(10, 6))
+    # plt.title(datetime.fromtimestamp(date))
+    # plt.plot(t, HNS_downsampled, 'r', lw=1, label=r'$B_{NS}$')
+    # if len(HEW_downsampled)>0:
+    #     plt.plot(t, HEW_downsampled, 'b', lw=1, label=r'$B_{EW}$')
+    # plt.ylabel("B [V]")
+    # plt.xlabel("Time [sec]")
+    # plt.xlim([0, 600])
+    # # plt.ylim([-200, 0])
+    # plt.grid(ls=':')
+    # plt.legend()
+    # plt.show()
+
+    # print(f"FS: {fs}")
+    # F, Pxx, Pyy, L1, L2, R1, R2, gof1, gof2 = srd_spec(date, fs, x, y)
+    # print(f"F {F.shape}, Pxx {Pxx.shape}")
+
+    # # Plotting the power spectral density (PSD)
+    # plt.figure()
+    # plt.plot(F, Pxx)
+    # plt.plot(F, L1, label='Lorentzian Fit')
+    # plt.xlabel('Frequency [Hz]')
+    # plt.ylabel('Power Spectral Density [pT^2/Hz]')
+    # plt.title('Power Spectral Density (PSD) using Welch\'s Method')
+    # plt.grid()
+    # plt.xlim(0,50)
+    # plt.show()
     # S_NS, S_EW, f = compute_PSD(HNS_downsampled, [], decimated_frequency, 3, 48)
     # plot_PSD(f, S_NS, S_EW)
 

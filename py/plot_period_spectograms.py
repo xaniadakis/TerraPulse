@@ -9,7 +9,7 @@ import time
 from datetime import datetime, timedelta
 import matplotlib.dates as mdates
 
-def plot_available_and_unavailable_periods_timeline(continuous_periods, total_start, total_end):
+def plot_available_and_unavailable_periods_timeline(continuous_periods, total_start, total_end, interval):
     fig, ax = plt.subplots(figsize=(15, 1.5))  
     
     # Sort continuous periods by start time
@@ -21,7 +21,7 @@ def plot_available_and_unavailable_periods_timeline(continuous_periods, total_st
     # Plot each period, filling gaps with red (unavailable periods)
     for period in sorted_periods:
         start_dt = datetime.strptime(period[0].split(os.sep)[-1].split('.')[0], "%Y%m%d%H%M")
-        end_dt = datetime.strptime(period[-1].split(os.sep)[-1].split('.')[0], "%Y%m%d%H%M") + timedelta(minutes=5)
+        end_dt = datetime.strptime(period[-1].split(os.sep)[-1].split('.')[0], "%Y%m%d%H%M") + timedelta(minutes=interval)
 
         # Plot unavailable period (in red) if there is a gap before the current period
         if start_dt > last_end:
@@ -246,8 +246,11 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
+    interval = 10
+
     # Collect all .zst files and find continuous periods
     zst_files = sorted([os.path.join(root, f) for root, _, files in os.walk(args.directory) for f in files if f.endswith('.zst')])
+    print(f"Found {len(zst_files)} zst files in {args.directory}.")
     continuous_periods = find_continuous_periods(zst_files)
     continuous_periods = sorted(continuous_periods, key=lambda period: -(len(period) * 5))
 
@@ -258,7 +261,7 @@ if __name__ == "__main__":
         start_str = period[0].split(os.sep)[-1].split('.')[0]
         end_str = period[-1].split(os.sep)[-1].split('.')[0]
         start_dt = datetime.strptime(start_str, "%Y%m%d%H%M")
-        end_dt = datetime.strptime(end_str, "%Y%m%d%H%M") + timedelta(minutes=5)
+        end_dt = datetime.strptime(end_str, "%Y%m%d%H%M") + timedelta(minutes=interval)
         
         # Calculate duration in minutes and format in human-readable units
         duration_minutes = int((end_dt - start_dt).total_seconds() / 60)
@@ -279,12 +282,16 @@ if __name__ == "__main__":
 
     # Sort all files to find the earliest and latest timestamp
     sorted_files = sorted([file for period in continuous_periods for file in period])
+    if not sorted_files:
+        print("Error: No valid .zst files found in the provided directory.")
+        exit(1)
+
     total_start = datetime.strptime(sorted_files[0].split(os.sep)[-1].split('.')[0], "%Y%m%d%H%M")
-    total_end = datetime.strptime(sorted_files[-1].split(os.sep)[-1].split('.')[0], "%Y%m%d%H%M") + timedelta(minutes=5)
+    total_end = datetime.strptime(sorted_files[-1].split(os.sep)[-1].split('.')[0], "%Y%m%d%H%M") + timedelta(minutes=interval)
 
     # Calculate the difference in days and minutes between total_start and total_end
     total_duration_days = (total_end - total_start).days
-    plot_available_and_unavailable_periods_timeline(continuous_periods, total_start, total_end)
+    plot_available_and_unavailable_periods_timeline(continuous_periods, total_start, total_end, interval)
 
     print(f"Just so you know the total minutes you have saved in this dir are: {total_duration_minutes}, "
           f"which are {total_duration_minutes // 1440} (probably non-consecutive) days contained in a period of {total_duration_days} days.")
