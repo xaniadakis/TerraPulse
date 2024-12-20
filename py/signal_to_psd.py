@@ -1151,6 +1151,7 @@ def transform_signal(input_filename, file_extension, do_plot=False):
             plt.title(f"{file_origin}-Logger Frequency-Domain Signal\n{formatted_datetime}")
             plt.ylabel(r"$PSD\ [pT^2/Hz]$")
             plt.xlabel("Frequency [Hz]")
+            plt.xticks(np.arange(0, 50, step=5))
             plt.grid(ls=':')
             plt.legend()
             

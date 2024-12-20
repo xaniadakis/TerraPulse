@@ -13,7 +13,7 @@ from scipy.signal import welch, windows
 from scipy.optimize import curve_fit
 
 new_logger_fact = 0.25  # New logger amp factor
-old_logger = 0  # Global variable in the original code; define as needed
+old_logger = 0  
 
 def get_srd_info(fn):
     """
@@ -222,19 +222,25 @@ def get_equalizer(freqs, date):
 
     # Select appropriate response based on the date
     if date < date1:
+        print(f"Using res1 as date: {date} < {date1}")
         res_amp, res_coil = get_res_1()
     elif date1 <= date < date2:
+        print(f"Using res2 as date: {date1} <= {date} < {date2}")
         res_amp, res_coil = get_res_2()
     elif date2 <= date < date3:
+        print(f"Using res2 as date: {date2} <= {date} < {date3}")
         res_amp, res_coil = get_res_3()
     elif date3 <= date < date4:
+        print(f"Using res2 as date: {date3} <= {date} < {date4}")
         res_amp, res_coil = get_res_4()
     elif date >= date4:
         if old_logger != 0:
+            print(f"non-zero old_logger: {old_logger}, {date} >= {date4}, use dummy equlaizer")
             sreq1 = np.ones(len(freqs)) * 40000
             sreq2 = sreq1
             return sreq1, sreq2
         else:
+            print(f"Using res5 as date: {date} >= {date4}")
             res_amp, res_coil = get_res_5()
 
     sreq1 = get_sreq(res_amp, res_coil, freqs)
@@ -1072,36 +1078,6 @@ def print_srd_data(fn):
     print(f"FS: {fs}")
     print(f"F {F.shape}, Pxx {Pxx.shape}")
 
-
-    # print(f"date: {date}, fs: {fs}, x: {x}, y: {y}")
-    # t = np.linspace(0, len(HNS_downsampled) / decimated_frequency, len(HNS_downsampled))
-    # plt.figure(figsize=(10, 6))
-    # plt.title(datetime.fromtimestamp(date))
-    # plt.plot(t, HNS_downsampled, 'r', lw=1, label=r'$B_{NS}$')
-    # if len(HEW_downsampled)>0:
-    #     plt.plot(t, HEW_downsampled, 'b', lw=1, label=r'$B_{EW}$')
-    # plt.ylabel("B [V]")
-    # plt.xlabel("Time [sec]")
-    # plt.xlim([0, 600])
-    # # plt.ylim([-200, 0])
-    # plt.grid(ls=':')
-    # plt.legend()
-    # plt.show()
-
-    # print(f"FS: {fs}")
-    # F, Pxx, Pyy, L1, L2, R1, R2, gof1, gof2 = srd_spec(date, fs, x, y)
-    # print(f"F {F.shape}, Pxx {Pxx.shape}")
-
-    # # Plotting the power spectral density (PSD)
-    # plt.figure()
-    # plt.plot(F, Pxx)
-    # plt.plot(F, L1, label='Lorentzian Fit')
-    # plt.xlabel('Frequency [Hz]')
-    # plt.ylabel('Power Spectral Density [pT^2/Hz]')
-    # plt.title('Power Spectral Density (PSD) using Welch\'s Method')
-    # plt.grid()
-    # plt.xlim(0,50)
-    # plt.show()
     # S_NS, S_EW, f = compute_PSD(HNS_downsampled, [], decimated_frequency, 3, 48)
     # plot_PSD(f, S_NS, S_EW)
 

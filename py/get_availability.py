@@ -691,7 +691,7 @@ class FileSelectorApp(QWidget):
                 start_year = datetime.strptime(period[0][0].split(os.sep)[-1].split('.')[0][:12], "%Y%m%d%H%M").year
                 if start_year not in periods_by_year:
                     periods_by_year[start_year] = []
-                periods_by_year[start_year].append((period[0], period[1], period[2]))
+                periods_by_year[start_year].append((period[0], period[1]))
             except ValueError as e:
                 print(f"Skipping period due to invalid format: {period} ({e})")
                 continue
@@ -924,6 +924,7 @@ class FileSelectorApp(QWidget):
             plt.suptitle(f"Polski Logger Processed Data (available in total: {total_days} days, {num_files} signals)", fontsize=14, fontweight='bold', y=0.98)
         elif file_type == "DAT":
             plt.suptitle(f"Polski Logger Original Data (available in total: {total_days} days, {num_files} signals)", fontsize=14, fontweight='bold', y=0.98)
+        plt.subplots_adjust(hspace=0.2)  # Adjust this value as needed
         plt.tight_layout(pad=3.0)  # Adjust padding to ensure the title doesn't overlap
 
         # Adjust labels and layout after plotting all years

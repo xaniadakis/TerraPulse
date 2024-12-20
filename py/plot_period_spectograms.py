@@ -9,19 +9,26 @@ import time
 from datetime import datetime, timedelta
 import matplotlib.dates as mdates
 
-def plot_available_and_unavailable_periods_timeline(continuous_periods, total_start, total_end, interval):
+FILE_TYPE = None
+DATE_FORMATS = ["%Y%m%d%H%M", "%Y%m%d%H%M%S"]
+DATE_FORMAT = None
+INTERVAL = None
+TOLERANCE = None
+MINIMUM_DAYS = 7
+
+def plot_available_and_unavailable_periods_timeline(continuous_periods, total_start, total_end):
     fig, ax = plt.subplots(figsize=(15, 1.5))  
     
     # Sort continuous periods by start time
-    sorted_periods = sorted(continuous_periods, key=lambda period: datetime.strptime(period[0].split(os.sep)[-1].split('.')[0], "%Y%m%d%H%M"))
+    sorted_periods = sorted(continuous_periods, key=lambda period: datetime.strptime(period[0].split(os.sep)[-1].split('.')[0], DATE_FORMAT))
 
     # Initialize the starting point of the timeline
     last_end = total_start
 
     # Plot each period, filling gaps with red (unavailable periods)
     for period in sorted_periods:
-        start_dt = datetime.strptime(period[0].split(os.sep)[-1].split('.')[0], "%Y%m%d%H%M")
-        end_dt = datetime.strptime(period[-1].split(os.sep)[-1].split('.')[0], "%Y%m%d%H%M") + timedelta(minutes=interval)
+        start_dt = datetime.strptime(period[0].split(os.sep)[-1].split('.')[0], DATE_FORMAT)
+        end_dt = datetime.strptime(period[-1].split(os.sep)[-1].split('.')[0], DATE_FORMAT) + timedelta(minutes=INTERVAL)
 
         # Plot unavailable period (in red) if there is a gap before the current period
         if start_dt > last_end:
@@ -109,14 +116,15 @@ def parallel_load_zst_files(filenames):
         return pool.map(load_psd_zst_file, filenames)
 
 # Helper function to identify continuous periods
-def find_continuous_periods(filenames, interval=5):
+def find_continuous_periods(filenames):
     continuous_periods = []
     current_period = []
     last_time = None
 
     for filename in filenames:
-        timestamp = datetime.strptime(filename.split(os.sep)[-1].split('.')[0], "%Y%m%d%H%M")
-        if last_time and (timestamp - last_time != timedelta(minutes=interval)):
+        timestamp = datetime.strptime(filename.split(os.sep)[-1].split('.')[0], DATE_FORMAT)
+        if last_time and (timestamp - last_time > timedelta(minutes=INTERVAL) + timedelta(seconds=TOLERANCE)):
+
             if len(current_period) > 1:
                 continuous_periods.append(current_period)
             current_period = []
@@ -133,10 +141,10 @@ def split_period_into_chunks(filenames, chunk_size_hours):
     chunk_size_minutes = chunk_size_hours * 60
     chunks = []
     current_chunk = []
-    chunk_start_time = datetime.strptime(filenames[0].split(os.sep)[-1].split('.')[0], "%Y%m%d%H%M")
+    chunk_start_time = datetime.strptime(filenames[0].split(os.sep)[-1].split('.')[0], DATE_FORMAT)
 
     for filename in filenames:
-        timestamp = datetime.strptime(filename.split(os.sep)[-1].split('.')[0], "%Y%m%d%H%M")
+        timestamp = datetime.strptime(filename.split(os.sep)[-1].split('.')[0], DATE_FORMAT)
         if (timestamp - chunk_start_time).total_seconds() / 60 >= chunk_size_minutes:
             chunks.append(current_chunk)
             current_chunk = []
@@ -153,8 +161,8 @@ def generate_spectrogram_from_zst_files(directory, output_directory, selected_pe
     create_dir_if_not_exists(output_directory)
 
     # Create a subdirectory for the specific period with descriptive naming
-    period_start = datetime.strptime(selected_period[0].split(os.sep)[-1].split('.')[0], "%Y%m%d%H%M")
-    period_end = datetime.strptime(selected_period[-1].split(os.sep)[-1].split('.')[0], "%Y%m%d%H%M") + timedelta(minutes=5)
+    period_start = datetime.strptime(selected_period[0].split(os.sep)[-1].split('.')[0], DATE_FORMAT)
+    period_end = datetime.strptime(selected_period[-1].split(os.sep)[-1].split('.')[0], DATE_FORMAT) + timedelta(minutes=INTERVAL)
     
     # Updated readable subdirectory name with 'from' and 'to'
     period_subdir = os.path.join(output_directory, f"{period_start.strftime('%d-%m-%Y')}_to_{period_end.strftime('%d-%m-%Y')}")
@@ -170,10 +178,10 @@ def generate_spectrogram_from_zst_files(directory, output_directory, selected_pe
         print(f"Processing chunk {i + 1}/{len(sub_periods)}...")
         
         start_date_str = sub_period[0].split(os.sep)[-1].split('.')[0]
-        start_date = datetime.strptime(start_date_str, "%Y%m%d%H%M")
+        start_date = datetime.strptime(start_date_str, DATE_FORMAT)
 
         end_date_str = sub_period[-1].split(os.sep)[-1].split('.')[0]
-        end_date = datetime.strptime(end_date_str, "%Y%m%d%H%M") + timedelta(minutes=5)
+        end_date = datetime.strptime(end_date_str, DATE_FORMAT) + timedelta(minutes=INTERVAL)
 
         # Load and prepare data for this sub-period
         load_start_time = time.time()
@@ -182,8 +190,8 @@ def generate_spectrogram_from_zst_files(directory, output_directory, selected_pe
 
         frequencies = results[0][0]
         psd_NS_list = [result[1] for result in results]
-        psd_EW_list = [result[1] for result in results]
-        time_points = [i * 5 / 60.0 for i in range(len(results))]
+        psd_EW_list = [result[2] for result in results]
+        time_points = [i * INTERVAL / 60.0 for i in range(len(results))]
 
         # Create memory-mapped matrix for plotting
         matrix_start_time = time.time()
@@ -193,11 +201,13 @@ def generate_spectrogram_from_zst_files(directory, output_directory, selected_pe
             psd_NS_matrix[:, i] = S_NS
         psd_NS_matrix.flush()
     
-        psd_EW_matrix = np.memmap('/tmp/psd_ew_matrix.dat', dtype='float32', mode='w+', shape=(len(frequencies), len(psd_EW_list)))
-        for i, S_EW in enumerate(psd_EW_list):
-            psd_EW_matrix[:, i] = S_EW
-        psd_EW_matrix.flush()
-    
+        is_single_channel = all(subarray.size == 0 for subarray in psd_EW_list)
+        psd_EW_matrix = None
+        if not is_single_channel:
+            psd_EW_matrix = np.memmap('/tmp/psd_ew_matrix.dat', dtype='float32', mode='w+', shape=(len(frequencies), len(psd_EW_list)))
+            for i, S_EW in enumerate(psd_EW_list):
+                    psd_EW_matrix[:, i] = S_EW
+            psd_EW_matrix.flush()
         print(f"Matrix creation and memory mapping time: {time.time() - matrix_start_time:.2f} seconds")
 
         # Save each spectrogram with readable filename
@@ -214,12 +224,12 @@ def generate_spectrogram_from_zst_files(directory, output_directory, selected_pe
         plot_spectrogram(psd_NS_matrix, frequencies, time_points, start_date, end_date,
                          output_filename=ns_output_filename,
                          downsample_factor=downsample_factor, filetype='NS')
-        
-        plot_spectrogram(psd_EW_matrix, frequencies, time_points, start_date, end_date,
-                         output_filename=ew_output_filename,
-                         downsample_factor=downsample_factor, filetype='EW')
+        if not is_single_channel:
+            plot_spectrogram(psd_EW_matrix, frequencies, time_points, start_date, end_date,
+                            output_filename=ew_output_filename,
+                            downsample_factor=downsample_factor, filetype='EW')
 
-# Command-line interface
+# python3 py/plot_period_spectograms.py -d '/mnt/e/NEW_NORTH_HELLENIC_DB' -o '../testspec' -t hel --year 2016 -s srt
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate spectrogram from .zst files in a directory")
     parser.add_argument(
@@ -233,6 +243,11 @@ if __name__ == "__main__":
         help="Path to the output directory for spectrograms"
     )
     parser.add_argument(
+        "-t", "--file-type", 
+        choices=['pol', 'hel'], 
+        help="Specify the file type to process. Only 'pol' or 'hel' are allowed."
+    )
+    parser.add_argument(
         "--downsample", 
         type=int, 
         default=1, 
@@ -244,39 +259,88 @@ if __name__ == "__main__":
         default=24, 
         help="Chunk size in hours for splitting long periods"
     )
+    parser.add_argument(
+        "-y","--year", 
+        type=int, 
+        help="Specify the year to filter periods. If not provided, all periods are shown."
+    )
+    parser.add_argument(
+        "-s","--sort-mode", 
+        choices=['lng', 'srt'], 
+        default='lng', 
+        help="Choose how to display periods: 'ln' to show longest first, 'srt' to sort by start time."
+    )
     args = parser.parse_args()
-
-    interval = 10
+    
+    FILE_TYPE = f"{args.file_type}"
+    if FILE_TYPE == 'pol':
+        DATE_FORMAT = DATE_FORMATS[0]
+        INTERVAL = 5
+        TOLERANCE = 0 # seconds
+    elif FILE_TYPE == 'hel':
+        DATE_FORMAT = DATE_FORMATS[1]
+        INTERVAL = 10
+        TOLERANCE = 10 # seconds
+    else:
+        print(f"File type .{FILE_TYPE} is not valid.")
 
     # Collect all .zst files and find continuous periods
     zst_files = sorted([os.path.join(root, f) for root, _, files in os.walk(args.directory) for f in files if f.endswith('.zst')])
-    print(f"Found {len(zst_files)} zst files in {args.directory}.")
     continuous_periods = find_continuous_periods(zst_files)
-    continuous_periods = sorted(continuous_periods, key=lambda period: -(len(period) * 5))
+    print(f"Found {len(zst_files)} zst files in {args.directory} and {len(continuous_periods)} continuous periods.")
+    # continuous_periods = sorted(continuous_periods, key=lambda period: -(len(period) * 10))
+
+    # Filter by year if specified
+    if args.year:
+        continuous_periods = [
+            period for period in continuous_periods
+            if datetime.strptime(period[0].split(os.sep)[-1].split('.')[0], DATE_FORMAT).year == args.year
+        ]
+        print(f"Filtered periods to only include year {args.year}. Found {len(continuous_periods)} periods.")
+
+    # Apply sort mode
+    if args.sort_mode == 'longest':
+        continuous_periods = sorted(
+            continuous_periods,
+            key=lambda period: (
+                datetime.strptime(period[-1].split(os.sep)[-1].split('.')[0], DATE_FORMAT) + timedelta(minutes=INTERVAL) -
+                datetime.strptime(period[0].split(os.sep)[-1].split('.')[0], DATE_FORMAT)
+            ).total_seconds(),
+            reverse=True
+        )
+    else:  # Default to sorted by start time
+        continuous_periods = sorted(
+            continuous_periods,
+            key=lambda period: datetime.strptime(period[0].split(os.sep)[-1].split('.')[0], DATE_FORMAT)
+        )
 
     total_duration_minutes = 0
     # Print out all available continuous periods in human-readable format
-    print("Available continuous periods:")
+    print(f"Available continuous periods (dformat: {DATE_FORMAT}):")
     for i, period in enumerate(continuous_periods):
         start_str = period[0].split(os.sep)[-1].split('.')[0]
         end_str = period[-1].split(os.sep)[-1].split('.')[0]
-        start_dt = datetime.strptime(start_str, "%Y%m%d%H%M")
-        end_dt = datetime.strptime(end_str, "%Y%m%d%H%M") + timedelta(minutes=interval)
+        start_dt = datetime.strptime(start_str, DATE_FORMAT)
+        end_dt = datetime.strptime(end_str, DATE_FORMAT) + timedelta(minutes=INTERVAL)
         
         # Calculate duration in minutes and format in human-readable units
         duration_minutes = int((end_dt - start_dt).total_seconds() / 60)
         total_duration_minutes += duration_minutes
-        if duration_minutes >= 1440:  # More than or equal to 1 day
-            duration_display = f"{duration_minutes // 1440} days"
+        day_in_minutes = 1440
+        if args.sort_mode == 'longest':
+            if duration_minutes < MINIMUM_DAYS * day_in_minutes:
+                continue
+        if duration_minutes >= day_in_minutes:  # More than or equal to 1 day
+            duration_display = f"{duration_minutes // day_in_minutes} days"
         elif duration_minutes >= 60:  # More than or equal to 1 hour
             duration_display = f"{duration_minutes // 60} hours"
         else:
             duration_display = f"{duration_minutes} minutes"
         
         # Format dates as DD/MM/YYYY HH:MM
-        print(f"\033[1;34m{i + 1}\033[0m: \033[1;32m{start_dt.strftime('%d/%m/%Y %H:%M')}\033[0m to \033[1;32m{end_dt.strftime('%d/%m/%Y %H:%M')}"
+        print(f"\033[1;34m{i + 1}\033[0m: \033[1;32m{start_dt.strftime('%d/%m/%Y %H:%M:%S')}\033[0m to \033[1;32m{end_dt.strftime('%d/%m/%Y %H:%M:%S')}"
               f"\033[0m (\033[1;31m{duration_display}\033[0m)")
-
+    print(f"Found {len(continuous_periods)} continuous periods with average duration of {total_duration_minutes/len(continuous_periods)} minutes")
     # Use the function to plot continuous periods with gaps
     # total_start and total_end should be the overall period you want to cover in the plot
 
@@ -286,16 +350,16 @@ if __name__ == "__main__":
         print("Error: No valid .zst files found in the provided directory.")
         exit(1)
 
-    total_start = datetime.strptime(sorted_files[0].split(os.sep)[-1].split('.')[0], "%Y%m%d%H%M")
-    total_end = datetime.strptime(sorted_files[-1].split(os.sep)[-1].split('.')[0], "%Y%m%d%H%M") + timedelta(minutes=interval)
+    total_start = datetime.strptime(sorted_files[0].split(os.sep)[-1].split('.')[0], DATE_FORMAT)
+    total_end = datetime.strptime(sorted_files[-1].split(os.sep)[-1].split('.')[0], DATE_FORMAT) + timedelta(minutes=INTERVAL)
 
     # Calculate the difference in days and minutes between total_start and total_end
     total_duration_days = (total_end - total_start).days
-    plot_available_and_unavailable_periods_timeline(continuous_periods, total_start, total_end, interval)
-
+    plot_available_and_unavailable_periods_timeline(continuous_periods, total_start, total_end)
     print(f"Just so you know the total minutes you have saved in this dir are: {total_duration_minutes}, "
-          f"which are {total_duration_minutes // 1440} (probably non-consecutive) days contained in a period of {total_duration_days} days.")
-    
+        f"which are {total_duration_minutes // 1440} (probably non-consecutive) days contained in a period of {total_duration_days} days "
+        f"({total_duration_days / 365.25:.1f} years).")
+
     # Ask user to select a period to plot and chunk size
     selected_index = int(input("Enter the number of the continuous period you wish to plot: ")) - 1
     if selected_index == -1:
