@@ -67,23 +67,101 @@ def load_psd_zst_file(filename):
     return npz_data['freqs'], npz_data['NS'], npz_data['EW']
 
 # Plot spectrogram with optional downsampling
-def plot_spectrogram(psd_data, frequencies, time_points, start_date, end_date, output_filename=None, downsample_factor=1, days=1, filetype='NS'):
+# def plot_spectrogram(psd_data, frequencies, time_points, start_date, end_date, output_filename=None, downsample_factor=1, days=1, filetype='NS'):
+#     start_time = time.time()
+#     psd_data_db = np.where(psd_data > 0, 10 * np.log10(psd_data), -np.inf)
+
+#     # Apply downsampling for faster plotting if specified
+#     psd_data_db = psd_data_db[::downsample_factor, :]
+#     frequencies = frequencies[::downsample_factor]
+
+#     plt.figure(figsize=(12, 6))
+#     plt.pcolormesh(time_points, frequencies, psd_data_db, shading='auto', cmap='inferno', vmax=10, vmin=-20)
+#     plt.colorbar(label='PSD (dB)')
+#     plt.ylabel('Frequency [Hz]')
+#     plt.xlabel('Time [hours]')
+#     plt.title(f'Spectrogram of PSD Data from {start_date.strftime("%Y-%m-%d %H:%M")} to {end_date.strftime("%Y-%m-%d %H:%M")}')
+
+#     # Set xtick positions and labels
+#     target_ticks = 20  # Target number of xticks
+#     time_range = max(time_points)
+#     xticks_interval = round(time_range / target_ticks)
+
+#     xtick_positions = [0]
+#     current_pos = xticks_interval
+#     while current_pos < time_range:
+#         xtick_positions.append(round(current_pos))
+#         current_pos += xticks_interval
+#     xtick_positions.append(time_range)
+
+#     xtick_labels = [start_date.strftime("%d/%m %H:%M")]
+#     for pos in xtick_positions[1:-1]:
+#         xtick_labels.append((start_date + timedelta(hours=pos)).strftime("%d/%m %H:00"))
+#     xtick_labels.append(end_date.strftime("%d/%m %H:%M"))
+
+#     plt.xticks(xtick_positions, labels=xtick_labels, rotation=68, ha='center',  fontsize=9.5)
+#     plt.yticks(np.arange(0, max(frequencies) + 5, 5))
+#     plt.tight_layout()
+
+#     if output_filename:
+#         plt.savefig(output_filename, dpi=300)
+#     else:
+#         plt.show()
+#     plt.close()
+#     print(f"Plotting {filetype} time: {time.time() - start_time:.2f} seconds")
+
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.colors import Normalize
+from matplotlib.ticker import MaxNLocator
+from datetime import timedelta
+import time
+
+def plot_spectrogram(psd_data, frequencies, time_points, start_date, end_date, output_filename=None, downsample_factor=1, days=1, filetype='NS', counter=""):
     start_time = time.time()
+
+    # Convert PSD to decibels with accurate handling of zero or negative values
     psd_data_db = np.where(psd_data > 0, 10 * np.log10(psd_data), -np.inf)
 
-    # Apply downsampling for faster plotting if specified
+    # Downsample for faster plotting if required
     psd_data_db = psd_data_db[::downsample_factor, :]
     frequencies = frequencies[::downsample_factor]
 
-    plt.figure(figsize=(12, 6))
-    plt.pcolormesh(time_points, frequencies, psd_data_db, shading='auto', cmap='inferno', vmax=10, vmin=-20)
-    plt.colorbar(label='PSD (dB)')
-    plt.ylabel('Frequency [Hz]')
-    plt.xlabel('Time [hours]')
-    plt.title(f'Spectrogram of PSD Data from {start_date.strftime("%Y-%m-%d %H:%M")} to {end_date.strftime("%Y-%m-%d %H:%M")}')
+    # Mask regions with no data to plot as black
+    psd_data_db = np.ma.masked_where(psd_data_db == -np.inf, psd_data_db)
+
+    # Initialize the plot with a larger size for clarity
+    plt.figure(figsize=(14, 8))
+
+    # Use an intense colormap (e.g., 'inferno') for better visualization
+    cmap = plt.cm.inferno
+
+    # Define color normalization for higher accuracy in magnitudes
+    norm = Normalize(vmin=-15, vmax=15)  # Adjust these bounds as needed
+
+    # Create the spectrogram
+    mesh = plt.pcolormesh(time_points, frequencies, psd_data_db, shading='auto', cmap=cmap, norm=norm)
+    cbar = plt.colorbar(mesh, extend='both')
+    cbar.set_label('PSD (dB)', fontsize=12)
+    cbar.ax.tick_params(labelsize=10)
+
+    # Set axis labels and title with a formal scientific style
+    plt.ylabel('Frequency [Hz]', fontsize=12)
+    plt.xlabel('Time [hours]', fontsize=12)
+    days_covered = (end_date - start_date).days
+    plt.title(f'{filetype} PSD Spectrogram {counter}\n{start_date.strftime("%Y-%m-%d %H:%M")} to {end_date.strftime("%Y-%m-%d %H:%M")} (~{days_covered} days)', fontsize=14, pad=15)
+
+    # Adjust xticks for even spacing and better readability
+    # target_ticks = 10
+    # time_range = time_points[-1] - time_points[0]
+    # xticks_interval = time_range / target_ticks
+
+    # xtick_positions = np.arange(0, time_points[-1] + xticks_interval, xticks_interval)
+    # xtick_labels = [(start_date + timedelta(hours=pos)).strftime("%d/%m %H:00") for pos in xtick_positions]
+
 
     # Set xtick positions and labels
-    target_ticks = 20  # Target number of xticks
+    target_ticks = 14  # Target number of xticks
     time_range = max(time_points)
     xticks_interval = round(time_range / target_ticks)
 
@@ -99,15 +177,24 @@ def plot_spectrogram(psd_data, frequencies, time_points, start_date, end_date, o
         xtick_labels.append((start_date + timedelta(hours=pos)).strftime("%d/%m %H:00"))
     xtick_labels.append(end_date.strftime("%d/%m %H:%M"))
 
-    plt.xticks(xtick_positions, labels=xtick_labels, rotation=68, ha='center',  fontsize=9.5)
-    plt.yticks(np.arange(0, max(frequencies) + 5, 5))
+    plt.xticks(xtick_positions, xtick_labels, rotation=45, ha='right', fontsize=10)
+
+    # Set y-axis limits to 0 to 50 Hz
+    # plt.ylim(0, 50)
+
+    # Adjust yticks to align with the frequency range
+    plt.gca().yaxis.set_major_locator(MaxNLocator(integer=True))
+
+    # Apply tight layout for better spacing
     plt.tight_layout()
 
+    # Save or display the plot
     if output_filename:
-        plt.savefig(output_filename, dpi=300)
+        plt.savefig(output_filename, dpi=600, bbox_inches='tight')
     else:
         plt.show()
     plt.close()
+
     print(f"Plotting {filetype} time: {time.time() - start_time:.2f} seconds")
 
 # Multiprocessing function for loading files
@@ -223,11 +310,11 @@ def generate_spectrogram_from_zst_files(directory, output_directory, selected_pe
         # Plot spectrogram for this sub-period
         plot_spectrogram(psd_NS_matrix, frequencies, time_points, start_date, end_date,
                          output_filename=ns_output_filename,
-                         downsample_factor=downsample_factor, filetype='NS')
+                         downsample_factor=downsample_factor, filetype='NS', counter=counter)
         if not is_single_channel:
             plot_spectrogram(psd_EW_matrix, frequencies, time_points, start_date, end_date,
                             output_filename=ew_output_filename,
-                            downsample_factor=downsample_factor, filetype='EW')
+                            downsample_factor=downsample_factor, filetype='EW', counter=counter)
 
 # python3 py/plot_period_spectograms.py -d '/mnt/e/NEW_NORTH_HELLENIC_DB' -o '../testspec' -t hel --year 2016 -s srt
 if __name__ == "__main__":
