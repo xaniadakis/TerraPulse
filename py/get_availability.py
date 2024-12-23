@@ -220,12 +220,15 @@ class FileSelectorApp(QWidget):
 
         files = []
         for base_dir in self.base_dirs:
-            if self.selected_mode == "hel":
-                files.extend(self.find_files_hel(base_dir, self.selected_dirs, file_extension.lower()))
-            elif self.selected_mode == "srd":
-                files.extend(self.find_files_srd(base_dir, self.selected_dirs, "SRD".lower()))
-            else:
-                files.extend(self.find_files(base_dir, self.selected_dirs, file_extension.lower()))
+            try:
+                if self.selected_mode == "hel":
+                    files.extend(self.find_files_hel(base_dir, self.selected_dirs, file_extension.lower()))
+                elif self.selected_mode == "srd":
+                    files.extend(self.find_files_srd(base_dir, self.selected_dirs, "SRD".lower()))
+                else:
+                    files.extend(self.find_files(base_dir, self.selected_dirs, file_extension.lower()))
+            except Exception as e:
+                print(f"Error while looking for {self.selected_mode} files: {e}")
 
         if not files:
             print(f"No {self.selected_mode} files found.")
@@ -412,7 +415,11 @@ class FileSelectorApp(QWidget):
     def find_files(self, base_dir, selected_dirs, file_extension):
         all_files = []
         total_dirs = 0
-
+        binary_file = False
+        if self.selected_mode.lower()=="dat":
+            binary_file = True
+            ch = 2
+        print(f"FILE EXT: {self.selected_mode}")
         # Count total directories within selected paths
         with tqdm(desc=f"Counting directories in chosen {base_dir}", unit="dir") as pbar:
             for subdir in selected_dirs:
@@ -429,7 +436,7 @@ class FileSelectorApp(QWidget):
                     first_file_flag = True     
                     files = [file.lower() for file in files]       
                     for file in files:
-                        if first_file_flag:
+                        if first_file_flag and not binary_file:
                             data = np.loadtxt(os.path.join(root, file), delimiter='\t')
                             ch = data.ndim
                             first_file_flag = False  # Set flag to False after the first file
