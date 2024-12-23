@@ -328,8 +328,8 @@ class FileSelectorApp(QWidget):
             for subdir in selected_dirs:
                 subdir_path = os.path.join(base_dir, subdir)
                 for root, dirs, files in os.walk(subdir_path):
-                    files = [file.lower() for file in files]      
-                    for i, file in enumerate(files):
+                    filtered_files = [file.lower() for file in files if file.lower().endswith(file_extension.lower())]
+                    for i, file in enumerate(filtered_files):
                         if file.endswith(file_extension):  # Check if the file has the right extension
                             file_path = os.path.join(root, file)
                             # print(f"dir: {subdir_path}")
@@ -395,8 +395,8 @@ class FileSelectorApp(QWidget):
                 subdir_path = os.path.join(base_dir, subdir)
                 for root, dirs, files in os.walk(subdir_path):
                     first_file_flag = True    
-                    files = [file.lower() for file in files]        
-                    for file in files:
+                    filtered_files = [file.lower() for file in files if file.lower().endswith(file_extension.lower())]
+                    for file in filtered_files:
                         if first_file_flag:
                             data = np.loadtxt(os.path.join(root, file), delimiter='\t')
                             ch = data.ndim
@@ -419,7 +419,7 @@ class FileSelectorApp(QWidget):
         if self.selected_mode.lower()=="dat":
             binary_file = True
             ch = 2
-        print(f"FILE EXT: {self.selected_mode}")
+        # print(f"FILE EXT: {self.selected_mode}")
         # Count total directories within selected paths
         with tqdm(desc=f"Counting directories in chosen {base_dir}", unit="dir") as pbar:
             for subdir in selected_dirs:
@@ -433,15 +433,21 @@ class FileSelectorApp(QWidget):
             for subdir in selected_dirs:
                 subdir_path = os.path.join(base_dir, subdir)
                 for root, dirs, files in os.walk(subdir_path):
-                    first_file_flag = True     
-                    files = [file.lower() for file in files]       
-                    for file in files:
-                        if first_file_flag and not binary_file:
-                            data = np.loadtxt(os.path.join(root, file), delimiter='\t')
-                            ch = data.ndim
-                            first_file_flag = False  # Set flag to False after the first file
-                        if file.endswith(file_extension) and len(file.split('.')[0]) == 12:  # Check if in YYYYMMDDHHMM format
-                            all_files.append((os.path.join(root, file), ch))
+                    first_file_flag = True
+                    filtered_files = [file.lower() for file in files if file.lower().endswith(file_extension.lower())]
+                    # print(f"We got {len(files)} files ({len(filtered_files)} filtered files) in {root}")
+                    for file in filtered_files:
+                        try:
+                            if first_file_flag and not binary_file:
+                                data = np.loadtxt(os.path.join(root, file), delimiter='\t')
+                                ch = data.ndim
+                                first_file_flag = False  # Set flag to False after the first file
+                            if file.endswith(file_extension) and len(
+                                    file.split('.')[0]) == 12:  # Check if in YYYYMMDDHHMM format
+                                all_files.append((os.path.join(root, file), ch))
+                        except Exception as e:
+                            print(f"Error occurred while processing file: {os.path.join(root, file)}")
+                            print(f"Error: {e}")
                     pbar.update(1)
         return sorted(all_files)
 
@@ -498,7 +504,7 @@ class FileSelectorApp(QWidget):
 
     def prepare_dobrowolsky_df(self):
         print(f"Shall get earthquakes for {self.selected_region} location!")
-        output_dir = "/mnt/c/Users/shumann/Documents/GaioPulse/earthquakes_db/output"
+        output_dir = "./earthquakes_db/output"#"/mnt/c/Users/shumann/Documents/GaioPulse/earthquakes_db/output"
         file_path = os.path.join(output_dir, f"dobrowolsky_{self.selected_region}.csv")
 
         # Check if file does not exist
