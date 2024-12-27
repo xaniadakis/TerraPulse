@@ -96,10 +96,11 @@ void process_dat_file(const char *file_path) {
         return;
     }
 
-    double *calibrated_HNS = NULL, *calibrated_HEW = NULL;
-    calibrate_HYL(HNS, HEW, nr, &calibrated_HNS, &calibrated_HEW);
-
     const char* date_dir = strndup(strrchr(file_path, '/') + 1, 8);
+
+    double *calibrated_HNS = NULL, *calibrated_HEW = NULL;
+    calibrate_HYL(HNS, HEW, nr, date_dir, &calibrated_HNS, &calibrated_HEW);
+
     char output_dir_path[1028];
     snprintf(output_dir_path, sizeof(output_dir_path), "%s/%s", OUTPUT_DIR, date_dir);
     create_dir(output_dir_path);

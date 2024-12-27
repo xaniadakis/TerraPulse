@@ -118,9 +118,24 @@ int read_dat_file(const char *fn, int **Bx, int **By, int *nr_out) {
     return 0;
 }
 
-void calibrate_HYL(int *Bx, int *By, int length, double **calibrated_Bx, double **calibrated_By) {
-    double a1_mVnT = 55.0;
-    double a2_mVnT = 55.0;
+void calibrate_HYL(int *Bx, int *By, int length, const char* date, double **calibrated_Bx, double **calibrated_By) {
+    int date_int = atoi(date);
+    double a1_mVnT, a2_mVnT;
+
+    if (date_int < 20210629) {
+        a1_mVnT = 90.3;
+        a2_mVnT = 90.4;
+    } else if (date_int < 20231211) {
+        a1_mVnT = 57.8;
+        a2_mVnT = 57.9;
+    } else {
+        a1_mVnT = 55.0;
+        a2_mVnT = 55.0;
+    }
+
+    // printf("Extracted Date: %s, %d\n", date, date_int);
+    // printf("a1_mVnT: %.1f\n", a1_mVnT);
+    // printf("a2_mVnT: %.1f\n", a2_mVnT);
 
     double a1 = a1_mVnT * 1e-3 / 1e3;
     double a2 = a2_mVnT * 1e-3 / 1e3;

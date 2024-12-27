@@ -10,7 +10,7 @@
 #include "srd.h"
 
 int read_dat_file(const char *fn, int **Bx, int **By, int *nr_out);
-void calibrate_HYL(int *Bx, int *By, int length, double **calibrated_Bx, double **calibrated_By);
+void calibrate_HYL(int *Bx, int *By, int length, const char* date, double **calibrated_Bx, double **calibrated_By);
 void save_signals(double *HNS, double *HEW, TimeDomainFeatures* hns_features, TimeDomainFeatures* hew_features, Harmonic* harmonics, int length, const char *output_file);
 
 double datenum(int year, int month, int day, int hour, int min, int sec);
