@@ -85,6 +85,8 @@ class FileSelectorApp(QWidget):
         mode_layout.addWidget(self.mode_label)
         mode_layout.addWidget(mode_dropdown)
         main_layout.addLayout(mode_layout)
+        mode_dropdown.setCurrentText("DAT")  # Set default selection to "DAT"
+        self.select_mode("DAT", automatic=True)  # Trigger mode selection update
 
         # mode_layout = QHBoxLayout()
         # self.mode_label = QLabel("Mode: Not Selected")
@@ -169,7 +171,7 @@ class FileSelectorApp(QWidget):
             item.setSelected(is_checked)
         self.check_ready_to_process()
 
-    def select_mode(self, mode):
+    def select_mode(self, mode, automatic=False):
     #     self.selected_mode = mode
     #     self.mode_label.setText(f"Mode: {self.selected_mode.upper()}")
 
@@ -182,7 +184,8 @@ class FileSelectorApp(QWidget):
     #     self.check_ready_to_process()
         self.selected_mode = mode.lower()
         self.mode_label.setText(f"Mode: {self.selected_mode.upper()}")
-        self.check_ready_to_process()
+        if not automatic:
+            self.check_ready_to_process()
 
     def select_region(self, region, automatic=False):
         self.region_label.setText(f"Region: {region}")
@@ -218,7 +221,7 @@ class FileSelectorApp(QWidget):
         else:
             interval_minutes = 5 
 
-        files = []
+        files = [] 
         for base_dir in self.base_dirs:
             try:
                 if self.selected_mode == "hel":
@@ -234,12 +237,34 @@ class FileSelectorApp(QWidget):
             print(f"No {self.selected_mode} files found.")
             return
 
+        # Extract and store distinct day directories
+        distinct_days = set()
+
+        for file_path, _ in sorted(files):
+            # Extract the directory containing the date portion
+            day_dir = file_path.split('/')[-2]  # Get the day directory (e.g., "20200827")
+            distinct_days.add(day_dir)
+
+        # Number of distinct day directories
+        num_distinct_days = len(distinct_days)
+
+        print(f"Distinct day directories: {sorted(distinct_days)}")
+        print(f"Number of distinct day directories: {num_distinct_days}")
+
+
+        # print(f"Total number of files: {len(files)}")
+
         # Find continuous periods and their overall start and end times
         continuous_periods, num_files = self.find_continuous_periods(files, interval_minutes)
-        total_start = datetime.strptime(files[0][0].split(os.sep)[-1].split('.')[0][:12], "%Y%m%d%H%M")
-        total_end = datetime.strptime(files[-1][0].split(os.sep)[-1].split('.')[0][:12], "%Y%m%d%H%M") + timedelta(minutes=interval_minutes)
+        print(f"Total number of files in all continuous periods: {sum(len(period[0]) for period in continuous_periods)}")
 
-        # num_files = len(files)
+        total_start = datetime.strptime(files[0][0].split(os.sep)[-1].split('.')[0][:12], "%Y%m%d%H%M")
+        total_end = max(
+            datetime.strptime(file[0].split(os.sep)[-1].split('.')[0][:12], "%Y%m%d%H%M") for file in files
+        ) + timedelta(minutes=interval_minutes)
+
+        # print(f"total start: {total_start}")
+        # print(f"total end: {total_end}")
 
         # Plot timeline
         self.plot_timeline(continuous_periods, total_start, total_end, num_files, interval_minutes, start_time)
@@ -419,10 +444,39 @@ class FileSelectorApp(QWidget):
         if self.selected_mode.lower()=="dat":
             binary_file = True
             ch = 2
+
+
+        # # Dictionary to store the first and last files per subdir
+        # files_info_per_subdir = {}
+
+        # # Collect files and their info in each subdir
+        # for subdir in selected_dirs:
+        #     subdir_path = os.path.join(base_dir, subdir)
+        #     files_with_extension = []
+
+        #     for root, _, files in os.walk(subdir_path):
+        #         filtered_files = sorted([file for file in files if file.lower().endswith(file_extension.lower())])
+        #         files_with_extension.extend([os.path.join(root, file) for file in filtered_files])
+
+        #     if files_with_extension:
+        #         first_file = files_with_extension[0]
+        #         last_file = files_with_extension[-1]
+        #         files_info_per_subdir[subdir_path] = (first_file, last_file, len(files_with_extension))
+        #     else:
+        #         files_info_per_subdir[subdir_path] = ("No files", "No files", 0)
+
+        # # Print the first and last file for each subdir
+        # for subdir, (first_file, last_file, count) in files_info_per_subdir.items():
+        #     print(f"Subdirectory: {subdir} -> Files with '{file_extension}' found: {count}")
+        #     print(f"  First file: {first_file}")
+        #     print(f"  Last file: {last_file}\n")
+
+
         # print(f"FILE EXT: {self.selected_mode}")
         # Count total directories within selected paths
         with tqdm(desc=f"Counting directories in chosen {base_dir}", unit="dir") as pbar:
             for subdir in selected_dirs:
+
                 subdir_path = os.path.join(base_dir, subdir)
                 for _, dirs, _ in os.walk(subdir_path):
                     total_dirs += len(dirs)
@@ -442,8 +496,7 @@ class FileSelectorApp(QWidget):
                                 data = np.loadtxt(os.path.join(root, file), delimiter='\t')
                                 ch = data.ndim
                                 first_file_flag = False  # Set flag to False after the first file
-                            if file.endswith(file_extension) and len(
-                                    file.split('.')[0]) == 12:  # Check if in YYYYMMDDHHMM format
+                            if file.endswith(file_extension) and len(file.split('.')[0]) == 12:  # Check if in YYYYMMDDHHMM format
                                 all_files.append((os.path.join(root, file), ch))
                         except Exception as e:
                             print(f"Error occurred while processing file: {os.path.join(root, file)}")
@@ -452,6 +505,8 @@ class FileSelectorApp(QWidget):
         return sorted(all_files)
 
     def find_continuous_periods(self, files, interval_minutes=5):
+        files = sorted(files, key=lambda f: f[0].split(os.sep)[-1].split('.')[0][:12])
+
         continuous_periods = []
         current_period = []
         last_time = None
@@ -466,6 +521,12 @@ class FileSelectorApp(QWidget):
                     print(f"Skipping invalid file: {file[0]} ({e})")
                     pbar.update(1)
                     continue  # Skip files with invalid formats
+
+                # Check for year change and split the period if necessary
+                if last_time and (timestamp.year != last_time.year):
+                    # Close the current period at the end of the year
+                    continuous_periods.append((current_period, file[1]))  # Close the current period
+                    current_period = []  # Start a new period for the new year
 
                 if last_time and (timestamp - last_time > timedelta(minutes=interval_minutes)):
                     if current_period:
@@ -499,6 +560,18 @@ class FileSelectorApp(QWidget):
 
         #         time_difference = first_time_next - last_time
         #         print(f"Period {i + 1} to {i + 2}: {time_difference}")
+
+        # Print first and last item of each continuous period
+        print("\nContinuous Periods Summary:")
+        for i, period in enumerate(continuous_periods, 1):
+            if period[0]:
+                first_item = period[0][0]
+                last_item = period[0][-1]
+                print(f"Period {i}:")
+                print(f"  First item: {first_item}")
+                print(f"  Last item: {last_item}")
+                print(f"  Number of files in period: {len(period[0])}\n")
+
 
         return continuous_periods, counter
 
@@ -668,8 +741,80 @@ class FileSelectorApp(QWidget):
         normalized = (impact - min_impact) / (max_impact - min_impact)
         return min_width + normalized * (max_width - min_width)
 
+    def plot_availability_histogram(self, continuous_periods):
+        """
+        Generate a histogram showing the availability of data for each year, categorized into
+        'NA', 'Single Channel', and 'Dual Channel'.
+
+        Parameters:
+        continuous_periods (list): List of tuples where each tuple contains file information
+                                and channel count.
+        """
+        from collections import defaultdict
+
+        # Calculate availability stats in days
+        availability_stats = defaultdict(lambda: {'NA': 0, 'Single Channel': set(), 'Dual Channel': set()})
+
+        for period in continuous_periods:
+            try:
+                # Parse the start and end times from the period
+                start_str = period[0][0].split(os.sep)[-1].split('.')[0][:12]
+                end_str = period[0][-1].split(os.sep)[-1].split('.')[0][:12]
+                start_time = datetime.strptime(start_str, "%Y%m%d%H%M")
+                end_time = datetime.strptime(end_str, "%Y%m%d%H%M")
+
+                # Get the days covered by the period
+                days_in_period = set((start_time + timedelta(days=i)).date() for i in range((end_time - start_time).days + 1))
+
+                # Add days to the appropriate category
+                if period[1] == 1:
+                    availability_stats[start_time.year]['Single Channel'].update(days_in_period)
+                elif period[1] == 2:
+                    availability_stats[start_time.year]['Dual Channel'].update(days_in_period)
+            except ValueError as e:
+                print(f"Skipping period due to invalid format: {period} ({e})")
+
+        # Calculate NA days based on the total days in a year
+        for year in availability_stats:
+            total_days = 366 if (year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)) else 365
+            used_days = len(availability_stats[year]['Single Channel']) + len(availability_stats[year]['Dual Channel'])
+            availability_stats[year]['NA'] = total_days - used_days
+
+        # Prepare data for histogram
+        sorted_years = sorted(availability_stats.keys())
+        categories = ['NA', 'Single Channel', 'Dual Channel']
+        bar_width = 0.25
+        x_positions = np.arange(len(sorted_years))
+
+        # Plot the histogram
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        colors = {'NA': 'red', 'Single Channel': 'blue', 'Dual Channel': 'green'}
+
+        for i, category in enumerate(categories):
+            counts = [availability_stats[year][category] if category == 'NA' else len(availability_stats[year][category]) for year in sorted_years]
+            percentages = [(count / (366 if (year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)) else 365)) * 100 for count, year in zip(counts, sorted_years)]
+            bars = ax.bar(x_positions + i * bar_width, percentages, bar_width, label=category, color=colors[category])
+
+            # Add exact numbers on top of each bin
+            for bar, count in zip(bars, counts):
+                if count>0:
+                    height = bar.get_height()
+                    ax.text(bar.get_x() + bar.get_width() / 2, height, f'{count}', ha='center', va='bottom', fontsize=8)
+
+        ax.set_xticks(x_positions + bar_width)
+        ax.set_xticklabels(sorted_years, rotation=45)
+        ax.set_xlabel("Year")
+        ax.set_ylabel("Availability (%)")
+        ax.set_title("Data Availability by Year")
+        ax.legend()
+
+        plt.tight_layout()
+        plt.show()
+
     def plot_timeline(self, continuous_periods, total_start, total_end, num_files, interval_minutes=5, start_time=None):
 
+        self.plot_availability_histogram(continuous_periods)
         dobrowolsky_df = self.prepare_dobrowolsky_df()
 
         # dobrowolsky_df = pd.read_csv('/mnt/c/Users/shumann/Documents/GaioPulse/earthquakes_db/output/dobrowolsky_valid_rows.csv')
@@ -699,6 +844,7 @@ class FileSelectorApp(QWidget):
         periods_by_year = {}
         total_days_with_data = set()  # Track total days across all years
         
+
         for period in continuous_periods:
             try:
                 start_year = datetime.strptime(period[0][0].split(os.sep)[-1].split('.')[0][:12], "%Y%m%d%H%M").year
@@ -728,7 +874,7 @@ class FileSelectorApp(QWidget):
         for i, year in enumerate(sorted_years):
             ax = axes[i]
             year_periods = periods_by_year[year]
-
+            
             # Determine start and end of the year
             year_start = datetime(year, 1, 1)
             year_end = datetime(year, 12, 31, 23, 59)
@@ -740,14 +886,24 @@ class FileSelectorApp(QWidget):
                 # print(f"Year {year} has {len(year_periods)} periods")
                 for period in year_periods:
                     try:
+                        print(f"################################")
+                        print(f"###YP: {period[0][0]}")
                         # Extract and validate the start timestamp
                         start_str = period[0][0].split(os.sep)[-1].split('.')[0][:12]
                         start = datetime.strptime(start_str, "%Y%m%d%H%M")
+                        # print(f"###start: {start}")
 
                         # Extract and validate the end timestamp
                         end_str = period[0][-1].split(os.sep)[-1].split('.')[0][:12]
                         end = datetime.strptime(end_str, "%Y%m%d%H%M") + timedelta(minutes=interval_minutes)
+                        print(f"###end: {end}")
 
+                        print(f"PERIOD00: {period[0][0]}")
+                        print(f"PERIOD0-1: {period[0][1]}")
+                        print(f"PERIOD0-2: {period[0][-2]}")
+                        print(f"PERIOD0-1: {period[0][-1]}")
+                        print(f"PERIOD LEN: {len(period[0])}")
+                        print(f"################################")
                         # Retrieve the path for this period
                         # directory_path = os.path.dirname(period[2])
                         # print(f"dir: {directory_path}")
@@ -758,7 +914,7 @@ class FileSelectorApp(QWidget):
                             days_with_data.add(current_day.date())
                             current_day += timedelta(days=1)
 
-                         # Plot gap (unavailable period) in red
+                        #  # Plot gap (unavailable period) in red
                         if start > last_end:
                             line_na, = ax.plot([last_end, start], [0.5, 0.5], color='red', lw=6, solid_capstyle='butt', label="NA")
                             if "NA" not in handled_labels:
@@ -1018,7 +1174,6 @@ class FileSelectorApp(QWidget):
         plt.xlabel("Months", fontsize=10, color="white")  # Set the color of the x-axis label
         plt.tight_layout()
         plt.show()
-
 
 if __name__ == "__main__":
     app = QApplication([])

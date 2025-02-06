@@ -752,6 +752,7 @@ def plot_signal_on_fit_error(f, p_in, signal_filename, component, message=None):
     plt.show()
 
 def lorentzian(f, *params):
+    
     """
     Lorentzian model function used for fitting.
     """
@@ -764,6 +765,27 @@ def lorentzian(f, *params):
         result += A / (1 + 4 * Q ** 2 * ((f / fc) - 1) ** 2)
     result += params[-1]  # Background noise level (BN)
     return result
+    # modes = len(params) // 3
+    # result = np.zeros_like(f)
+    # for i in range(modes):
+    #     fc = params[i * 3]  # Center frequency
+    #     A = params[i * 3 + 1]  # Amplitude
+    #     Q = params[i * 3 + 2]  # Q factor
+
+    #     # Lorentzian model
+    #     lorentzian_part = A / (1 + 4 * Q**2 * ((f / fc) - 1)**2)
+
+    #     # Gaussian model for broader contributions
+    #     gaussian_part = A * np.exp(-((f - fc)**2) / (2 * (fc / 4)**2))
+
+    #     # Blend the Lorentzian and Gaussian parts (adjust blend_factor as needed)
+    #     blend_factor = 0.5
+    #     result += (1 - blend_factor) * lorentzian_part + blend_factor * gaussian_part
+
+    # # Background noise
+    # result += params[-1]
+    # return result
+
 
 def gaussian_weights(f, mean, std, scale_factor=1.0):
     # Scale the width based on the data's frequency range (optional)
@@ -832,6 +854,60 @@ import numpy as np
 from scipy.optimize import least_squares
 from scipy.signal import find_peaks
 
+from scipy.signal import find_peaks, peak_prominences
+
+# def dynamic_peak_detection(f, p_in, modes, prominence_factor=0.1):
+#     # Calculate dynamic prominence based on the range of signal values
+#     prominence = (np.max(p_in) - np.min(p_in)) * prominence_factor
+    
+#     # Detect peaks with dynamic prominence and minimum distance
+#     peaks, _ = find_peaks(p_in, prominence=prominence)
+    
+#     # Select the top 'modes' peaks by prominence
+#     if len(peaks) > modes:
+#         prominences = peak_prominences(p_in, peaks)[0]
+#         top_peaks = peaks[np.argsort(prominences)[-modes:]]
+#         f_res = f[top_peaks]
+#     else:
+#         f_res = f[peaks] if peaks.size > 0 else np.linspace(np.min(f), np.max(f), modes)
+#     return f_res
+
+# def dynamic_weights(f, p_in, smoothing_factor=0.5):
+#     # Smooth the signal to identify regions with high variability
+#     smooth_signal = np.convolve(p_in, np.ones(5)/5, mode='same')
+#     signal_variation = np.abs(p_in - smooth_signal)
+    
+#     # Assign higher weights to less variable regions
+#     noise_level = np.std(p_in[:int(len(p_in) * 0.1)])  # Estimate from first 10% of data
+#     weights = 1.0 / (1 + smoothing_factor * signal_variation / (noise_level + 1e-6))
+#     return weights
+
+# def rate_fit_dynamic(chi2, r2, n, p, signal_variance, chi2_weight=0.6, r2_weight=0.4):
+#     dof = n - p
+#     chi2_normalized = 1 / (1 + chi2 / (dof * signal_variance))
+#     r2_normalized = np.clip(r2, 0, 1)
+#     final_score = (chi2_weight * chi2_normalized) + (r2_weight * r2_normalized)
+#     return final_score * 100
+
+def adaptive_peak_detection(p_in, f, min_prominence=0.05, min_distance=2.0, max_peaks=None):
+    # Detect peaks with adaptive prominence
+    peaks, _ = find_peaks(p_in, prominence=(np.max(p_in) - np.min(p_in)) * min_prominence)
+    prominences = peak_prominences(p_in, peaks)[0]
+
+    # Sort peaks by prominence in descending order
+    sorted_peaks = peaks[np.argsort(prominences)[::-1]]
+
+    # Filter out peaks that are too close together
+    final_peaks = [sorted_peaks[0]]  # Always keep the most prominent peak first
+    for peak in sorted_peaks[1:]:
+        if np.all(np.abs(f[peak] - f[final_peaks]) > min_distance):
+            final_peaks.append(peak)
+        if max_peaks and len(final_peaks) >= max_peaks:
+            break  # Stop if we reach the maximum number of peaks
+
+    return f[final_peaks], final_peaks
+
+
 def sr_fit(f, p_in, modes, signal_filename, component):
     global na_fits_num
 
@@ -852,40 +928,60 @@ def sr_fit(f, p_in, modes, signal_filename, component):
     #     f_res = np.linspace(np.min(f), np.max(f), modes)
     #     # f_res = f[peaks]
 
-        # Schumann resonance harmonics (in Hz)
-    schumann_harmonics = np.array([7.8, 14, 20, 27, 33, 39, 45])  # Add or modify harmonics as needed
-
-    min_distance_hz = 4
-    df = f[1] - f[0]
-    distance = int(min_distance_hz / df)
-
+    # Schumann resonance harmonics (in Hz)
+    # schumann_harmonics = np.array([7.8, 14, 20, 27, 33, 39, 45])  # Add or modify harmonics as needed
     # Peak detection
-    peaks, _ = find_peaks(p_in, height=np.max(p_in) * 0.1, distance=distance)
+    # min_distance_hz = 4
+    # df = f[1] - f[0]
+    # distance = int(min_distance_hz / df)
+    # peaks, _ = find_peaks(p_in, height=np.max(p_in) * 0.1, distance=distance)
 
-    if len(peaks) >= modes:
-        # Use the detected peaks if sufficient
-        f_res = f[peaks[:modes]]
-    else:
-        f_res = schumann_harmonics[:modes]
+    # Usage example:
+    min_distance_hz = 2.5  # Adjust this to control peak merging sensitivity
+    f_res, peaks_indices = adaptive_peak_detection(p_in, f, min_distance=min_distance_hz, max_peaks=modes)
+    print(sorted(f_res))
+    # if len(peaks) >= modes:
+    #     # Use the detected peaks if sufficient
+    #     f_res = f[peaks[:modes]]
+    # else:
+    #     f_res = schumann_harmonics[:modes]
 
     # Initial amplitude guesses around the detected peaks
     ainits = [np.mean(p_in[(f > freq - 0.5) & (f < freq + 0.5)]) for freq in f_res]
+    # ainits = []
+    # for freq in f_res:
+    #     # Consider wider windows and penalize extreme variances
+    #     local_region = p_in[(f > freq - 1) & (f < freq + 1)]
+    #     if len(local_region) > 0:
+    #         ainits.append(np.max(local_region) * 0.8)  # Start near local maximum amplitude
+    #     else:
+    #         ainits.append(np.mean(p_in) * 0.5)  # Fallback for sparse data regions
 
     # Set initial Q factors and background noise level
-    Qstart = 5
+    # Qstart = 5
+    Qstart = np.clip(10 / (np.max(f) - np.min(f)), 2, 50)  # Dynamic initial Q factor
     init_params = []
-    for i in range(modes):
+    for i in range(len(f_res)):
         init_params.extend([f_res[i], ainits[i], Qstart])
     init_params.append(0)  # Background noise (BN) start value
 
     # Define bounds for parameters
+    # signal_range = np.max(p_in) - np.min(p_in)
+    # peak_separation = np.abs(np.diff(f_res)).mean()  # Average peak separation
+
     lower_bounds = []
     upper_bounds = []
-    for i in range(modes):
+    for i in range(len(f_res)):
         # lower_bounds.extend([f_res[i] - 5, 0.5 * ainits[i], 1])
         # upper_bounds.extend([f_res[i] + 5, 1.5 * ainits[i], 50])
-        lower_bounds.extend([f_res[i] - 3, 0, 1])
-        upper_bounds.extend([f_res[i] + 3, 2 * max(p_in), 20])
+        # lower_bounds.extend([f_res[i] - 3, 0, 1])
+        # upper_bounds.extend([f_res[i] + 3, 2 * max(p_in), 20])
+        lower_bounds.extend([f_res[i] - 5, 0, 0.1])
+        # upper_bounds.extend([f_res[i] + 5, 2 * max(p_in), 500])  # Allow high Q if needed
+        upper_bounds.extend([f_res[i] + 5, 2 * max(p_in), 100])  # Allow wider Q ranges
+        # lower_bounds.extend([f_res[i] - 5, 0, max(0.1, peak_separation / 10)])
+        # upper_bounds.extend([f_res[i] + 5, 2 * max(p_in), 150])  # Wider Q range for complex modes
+
     lower_bounds.append(0)  # BN lower bound
     upper_bounds.append(max(p_in))  # BN upper bound
 
@@ -895,8 +991,31 @@ def sr_fit(f, p_in, modes, signal_filename, component):
     noise_level = np.std(p_in[:int(len(p_in) * 0.1)])  # Estimate noise from the first 10% of data
     weights = gaussian_weights(f, mean, std, scale_factor=1.0) / (noise_level + 1e-6)
     # weights = gaussian_weights(f, mean, std)
+    # signal_variation = np.abs(p_in - np.convolve(p_in, np.ones(10)/10, mode='same'))
+    # weights = 1.0 / (1 + 0.5 * signal_variation / (noise_level + 1e-6))
 
     try:
+        # f_res = dynamic_peak_detection(f, p_in, modes)
+        # weights = dynamic_weights(f, p_in)
+
+        # result = least_squares(
+        #     residuals,
+        #     init_params,
+        #     bounds=(lower_bounds, upper_bounds),
+        #     args=(f, p_in, lorentzian, weights),
+        #     method='trf',
+        #     loss='huber',
+        #     f_scale=0.5
+        # )
+
+        # if result.success:
+        #     fitline = lorentzian(f, *result.x)
+        #     chi2 = np.sum(((p_in - fitline) ** 2) / weights**2)
+        #     r2 = r_squared(p_in, fitline)
+        #     fit_rating = rate_fit_dynamic(chi2, r2, len(f), len(result.x), np.var(p_in))
+        #     return fitline, result.x[-1], np.reshape(result.x[:-1], (modes, 3)), fit_rating
+        # else:   
+        #     raise RuntimeError(result.message)
         # Use least_squares for fitting
         result = least_squares(
             residuals,
@@ -916,7 +1035,7 @@ def sr_fit(f, p_in, modes, signal_filename, component):
         # Extract the fitted values
         fitline = lorentzian(f, *params)
         noiseline = params[-1]
-        results = np.reshape(params[:-1], (modes, 3))
+        results = np.reshape(params[:-1], (len(f_res), 3))
 
         # Calculate fit rating (Chi-squared and R-squared metrics can be added if needed)
         chi2 = np.sum(((p_in - fitline) ** 2) / weights**2)
