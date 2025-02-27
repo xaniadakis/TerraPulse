@@ -1,6 +1,7 @@
 
 #include "io.h"
 
+#include "log.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -11,10 +12,10 @@
 #include <math.h>
 #include <time.h>
 
-
 int read_dat_file(const char *fn, int **Bx, int **By, int *nr_out) {
     FILE *f = fopen(fn, "rb");
     if (!f) {
+        // LOG("read_dat_file: File opening failed");
         perror("read_dat_file: File opening failed");
         return 1;
     }
@@ -26,6 +27,7 @@ int read_dat_file(const char *fn, int **Bx, int **By, int *nr_out) {
 
     uint8_t *data = (uint8_t *) malloc(file_size);
     if (!data) {
+        // LOG("Memory allocation failed");
         perror("Memory allocation failed");
         fclose(f);
         return 2;
@@ -41,6 +43,7 @@ int read_dat_file(const char *fn, int **Bx, int **By, int *nr_out) {
     *Bx = (int *) calloc(Bx_size, sizeof(int));
     *By = (int *) calloc(By_size, sizeof(int));
     if (!(*Bx) || !(*By)) {
+        // LOG("Memory allocation failed");
         perror("Memory allocation failed");
         free(data);
         return 2;
@@ -54,6 +57,7 @@ int read_dat_file(const char *fn, int **Bx, int **By, int *nr_out) {
     for (int j = 0; j < 89; j++) {
         if (i + 4 >= file_size) {
             fprintf(stderr, "\33[2K\r"); 
+            // LOG("Out of bounds in read_dat_file (loop 1): %d/%ld, file: %s\n", i + 4, file_size, fn);
             fprintf(stderr, "Out of bounds in read_dat_file (loop 1): %d/%ld, file: %s\n", i + 4, file_size, fn);
             free(data);
             free(*Bx);
@@ -72,6 +76,7 @@ int read_dat_file(const char *fn, int **Bx, int **By, int *nr_out) {
         for (int j = 0; j < 102; j++) {
             if (i + 4 >= file_size) {
                 fprintf(stderr, "\33[2K\r");                 
+                // LOG("Out of bounds in read_dat_file (loop 2): %d/%ld, file: %s\n", i + 4, file_size, fn);
                 fprintf(stderr, "Out of bounds in read_dat_file (loop 2): %d/%ld, file: %s\n", i + 4, file_size, fn);
                 free(data);
                 free(*Bx);
@@ -90,6 +95,7 @@ int read_dat_file(const char *fn, int **Bx, int **By, int *nr_out) {
     for (int j = 0; j < 82; j++) {
         if (i + 4 >= file_size) {
             fprintf(stderr, "\33[2K\r"); 
+            // LOG("Out of bounds in read_dat_file (loop 3): %d/%ld, file: %s\n", i + 4, file_size, fn);
             fprintf(stderr, "Out of bounds in read_dat_file (loop 3): %d/%ld, file: %s\n", i + 4, file_size, fn);
             free(data);
             free(*Bx);
@@ -152,6 +158,7 @@ void calibrate_HYL(int *Bx, int *By, int length, const char* date, double **cali
     *calibrated_By = (double *) malloc(length * sizeof(double));
 
     if (*calibrated_Bx == NULL || *calibrated_By == NULL) {
+        // LOG("Memory allocation failed");
         perror("Memory allocation failed");
         return;
     }
@@ -191,6 +198,7 @@ void save_signals(double *HNS, double *HEW,
     // }
 
     if (!f) {
+        // LOG("save_signals: File opening failed, filename: %s\n", output_file);
         printf("filename: %s\n", output_file);
         perror("save_signals: File opening failed");
         return;
@@ -226,6 +234,7 @@ SrdData read_srd_file(const char *fpath) {
 
     fread(&ID, sizeof(uint64_t), 1, fp);
     if (ID != DATALOGGERID) {
+        // LOG("File \"%s\" is not a logger record!\n", fpath);
         fprintf(stderr, "File \"%s\" is not a logger record!\n", fpath);
         fclose(fp);
         return data;

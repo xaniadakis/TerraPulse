@@ -20,6 +20,9 @@ import pandas as pd
 from pathlib import Path
 import mplcursors  # Add this library for interactivity
 
+import logging
+
+
 NUM_HARMONICS = 7  # Define the number of harmonics expected
 FMIN = 3
 FMAX = 48
@@ -889,26 +892,34 @@ from scipy.signal import find_peaks, peak_prominences
 #     final_score = (chi2_weight * chi2_normalized) + (r2_weight * r2_normalized)
 #     return final_score * 100
 
-def adaptive_peak_detection(p_in, f, min_prominence=0.05, min_distance=2.0, max_peaks=None):
-    # Detect peaks with adaptive prominence
+def adaptive_peak_detection(p_in, f, min_prominence=0.05, min_distance=2.0, max_peaks=None, smoothen=False):
+
+    if smoothen:
+        p_in = np.convolve(p_in, np.ones(5)/5, mode='same')
+
+    # Detect peaks
     peaks, _ = find_peaks(p_in, prominence=(np.max(p_in) - np.min(p_in)) * min_prominence)
+    # peaks, _ = find_peaks(p_in, prominence=(np.max(p_in) - np.min(p_in)) * min_prominence)
+
+    if len(peaks) == 0:
+        return np.array([]), []
+
     prominences = peak_prominences(p_in, peaks)[0]
 
-    # Sort peaks by prominence in descending order
+    # Sort by prominence and keep only top peaks
     sorted_peaks = peaks[np.argsort(prominences)[::-1]]
-
-    # Filter out peaks that are too close together
-    final_peaks = [sorted_peaks[0]]  # Always keep the most prominent peak first
+    final_peaks = [sorted_peaks[0]]
+    
     for peak in sorted_peaks[1:]:
         if np.all(np.abs(f[peak] - f[final_peaks]) > min_distance):
             final_peaks.append(peak)
         if max_peaks and len(final_peaks) >= max_peaks:
-            break  # Stop if we reach the maximum number of peaks
+            break
 
     return f[final_peaks], final_peaks
 
 
-def sr_fit(f, p_in, modes, signal_filename, component):
+def sr_fit(f, p_in, modes, signal_filename, component, smoothen=False):
     global na_fits_num
 
     # min_distance_hz = 3.3  # Minimum separation in Hz
@@ -937,9 +948,14 @@ def sr_fit(f, p_in, modes, signal_filename, component):
     # peaks, _ = find_peaks(p_in, height=np.max(p_in) * 0.1, distance=distance)
 
     # Usage example:
-    min_distance_hz = 2.5  # Adjust this to control peak merging sensitivity
-    f_res, peaks_indices = adaptive_peak_detection(p_in, f, min_distance=min_distance_hz, max_peaks=modes)
-    print(sorted(f_res))
+    min_distance_hz = 2  # Adjust this to control peak merging sensitivity
+    if np.all(p_in == 0) or len(p_in) == 0:
+        logger.info(f"Skipping {signal_filename} - No significant signal detected for {component}")
+        return None, None, None, 0.0
+
+    f_res, peaks_indices = adaptive_peak_detection(p_in, f, min_prominence=0.05, 
+                                                   min_distance=min_distance_hz, max_peaks=modes, smoothen=smoothen)
+    # print(sorted(f_res))
     # if len(peaks) >= modes:
     #     # Use the detected peaks if sufficient
     #     f_res = f[peaks[:modes]]
@@ -1049,12 +1065,12 @@ def sr_fit(f, p_in, modes, signal_filename, component):
 
     except RuntimeError as e:
         na_fits_num += 1
-        tqdm.write(f"{na_fits_num} N/A fit for {component} of {signal_filename} (conv err)")
+        logger.info(f"{na_fits_num} N/A fit for {component} of {signal_filename} (conv err)")
         return None, None, None, 0.0
 
     except Exception as e:
         na_fits_num += 1
-        tqdm.write(f"{na_fits_num} N/A fit for {component} of {signal_filename} (ex)")
+        logger.info(f"{na_fits_num} N/A fit for {component} of {signal_filename} (ex)")
         return None, None, None, 0.0
     
 # def sr_fit(f, p_in, modes, signal_filename, component):
@@ -1134,11 +1150,11 @@ def delete_file(file_path):
     try:
         os.remove(file_path)
     except FileNotFoundError:
-        print(f"The file does not exist: {file_path}")
+        logger.error(f"The file does not exist: {file_path}")
     except PermissionError:
-        print(f"Permission denied: {file_path}")
+        logger.error(f"Permission denied: {file_path}")
     except Exception as e:
-        print(f"An error occurred while deleting the file: {e}")
+        logger.error(f"An error occurred while deleting the file: {e}")
 
 def read_signals(file_path):
     with open(file_path, 'r') as file:
@@ -1199,7 +1215,7 @@ def transform_signal(input_filename, file_extension, do_plot=False):
         sreq1, sreq2 = None, None
         # Welch's power spectral density estimate
         if len(HNS) < M:
-            tqdm.write(f"Warning: NS Signal length {len(HNS)} is shorter than nperseg {M}.")    
+            logger.info(f"Warning: NS Signal length {len(HNS)} is shorter than nperseg {M}.")    
             error_files.append(input_filename+": NS signal shorter than window") 
             return
         frequencies, S_NS = signal.welch(x=HNS, window=w, fs=SAMPLING_RATE, nperseg=M, noverlap=overlap, scaling='spectrum')
@@ -1215,6 +1231,11 @@ def transform_signal(input_filename, file_extension, do_plot=False):
             sreq1, sreq2 = get_equalizer(frequencies, file_datetime)
             S_NS *= sreq1
         L1, _, R1, gof1 = sr_fit(frequencies, S_NS, NUM_HARMONICS, input_filename, "NS")
+        if gof1 < 50:
+            _L1, _, _R1, _gof1 = sr_fit(frequencies, S_NS, NUM_HARMONICS, input_filename, "NS", smoothen=True)
+            if _gof1>gof1:
+                print(f"We got {_gof1} gof instead of {gof1} by smoothing NS.")
+                L1, R1, gof1 = _L1, _R1, _gof1
         L2, R2, gof2 = None, None, None
         if HEW is not None:
             # Compute PSD for HEW if it exists
@@ -1229,7 +1250,7 @@ def transform_signal(input_filename, file_extension, do_plot=False):
 
             # Compute the Welch power spectral density estimate for the second signal
             if len(HEW) < M:
-                tqdm.write(f"Warning: EW Signal length {len(HEW)} is shorter than nperseg {M}.")        
+                logger.info(f"Warning: EW Signal length {len(HEW)} is shorter than nperseg {M}.")        
                 error_files.append(input_filename+": EW signal shorter than window") 
                 return
             frequencies, S_EW = signal.welch(HEW, fs=SAMPLING_RATE, nperseg=M, noverlap=overlap, scaling='spectrum')
@@ -1246,6 +1267,11 @@ def transform_signal(input_filename, file_extension, do_plot=False):
             if file_origin == "Hellenic":
                 S_EW *= sreq2
             L2, _, R2, gof2 = sr_fit(frequencies, S_EW, NUM_HARMONICS, input_filename, "EW")
+            if gof2 < 50:
+                _L2, _, _R2, _gof2 = sr_fit(frequencies, S_EW, NUM_HARMONICS, input_filename, "EW", smoothen=True)
+                if _gof2>gof2:
+                    print(f"We got {_gof2} gof instead of {gof2} by smoothing EW.")
+                    L2, R2, gof2 = _L2, _R2, _gof2
         else:
             S_EW = None
 
@@ -1302,16 +1328,16 @@ def transform_signal(input_filename, file_extension, do_plot=False):
         fit_data['EW_fit'].append(gof2 if HEW is not None and gof2 > 0 else (np.nan if HEW is not None else None))
 
     except IndexError as ie:
-        tqdm.write(f"Indexing error occurred while processing '{input_filename+file_extension}': {repr(ie)}")
-        tqdm.write(f"Shape of data at error: {data.shape}")
+        logger.info(f"Indexing error occurred while processing '{input_filename+file_extension}': {repr(ie)}")
+        logger.info(f"Shape of data at error: {data.shape}")
         traceback.print_exc() 
         error_files.append(input_filename)    
     except ValueError as ve:
-        tqdm.write(f"Value error occurred while processing '{input_filename+file_extension}': {repr(ve)[:500]}")
+        logger.info(f"Value error occurred while processing '{input_filename+file_extension}': {repr(ve)[:500]}")
         traceback.print_exc() 
         error_files.append(input_filename)
     except Exception as e:
-        tqdm.write(f"An unexpected error occurred while processing '{input_filename+file_extension}': {repr(e)}")
+        logger.info(f"An unexpected error occurred while processing '{input_filename+file_extension}': {repr(e)}")
         traceback.print_exc() 
         error_files.append(input_filename)
 
@@ -1336,10 +1362,10 @@ def process_files_in_directory():
             ]
 
     if not subdirectory_files:
-        print(f"{Fore.RED}No {FILE_TYPE} files found in {INPUT_DIRECTORY} directory!{Style.RESET_ALL}")
+        logger.info(f"{Fore.RED}No {FILE_TYPE} files found in {INPUT_DIRECTORY} directory!{Style.RESET_ALL}")
         return
 
-    print(f"Will transform files grouped in {len(subdirectory_files)} subdirectories!\n")
+    logger.info(f"Will transform files grouped in {len(subdirectory_files)} subdirectories!\n")
 
     # Create an outer progress bar for subdirectory processing
     subdir_pbar = tqdm(
@@ -1354,7 +1380,7 @@ def process_files_in_directory():
     for i, (subdir, file_list) in enumerate(subdirectory_files.items()):
         unprocessed_files = [f for f in file_list if f not in processed_files]
         if not unprocessed_files:
-            tqdm.write(f"Skipping subdirectory {i}: {subdir} (All files already processed)")
+            logger.info(f"Skipping subdirectory {i}: {subdir} (All files already processed)")
             continue  # Skip to the next subdirectory
 
         # Prepare the directory information
@@ -1383,12 +1409,12 @@ def process_files_in_directory():
             df['EW_zero_fit'] = df['EW_fit'].apply(lambda x: 1 if pd.isna(x) else 0)
 
             df.set_index('timestamp', inplace=True)
-            rolling_stats = df.resample('24h').agg({
-                'NS_fit': ['mean', 'std', 'count'],
-                'EW_fit': ['mean', 'std', 'count'],
-                'NS_zero_fit': 'sum',
-                'EW_zero_fit': 'sum'
-            })
+            # rolling_stats = df.resample('24h').agg({
+            #     'NS_fit': ['mean', 'std', 'count'],
+            #     'EW_fit': ['mean', 'std', 'count'],
+            #     'NS_zero_fit': 'sum',
+            #     'EW_zero_fit': 'sum'
+            # })
 
             # if not rolling_stats.empty:
             #     latest_stats = rolling_stats.iloc[-1]
@@ -1404,7 +1430,7 @@ def process_files_in_directory():
             #     tqdm.write("-" * 40)
             # na_fits_num += df['EW_zero_fit'].sum() + df['NS_zero_fit'].sum()
         else:
-            tqdm.write(f"{Fore.RED}No valid fit data collected.{Style.RESET_ALL}")
+            logger.info(f"{Fore.RED}No valid fit data collected.{Style.RESET_ALL}")
 
         subdir_pbar.update(1)
 
@@ -1413,27 +1439,46 @@ def process_files_in_directory():
 import tkinter as tk
 from tkinter import filedialog
 
-def select_file_and_transform():
-    # Initialize Tkinter file dialog
-    root = tk.Tk()
-    root.withdraw()  # Hide the root window
+def select_file_and_transform(file_path=None):
+    if file_path is None:
 
-    # Open file dialog to select a single file
-    file_path = filedialog.askopenfilename(
-        # initialdir=INPUT_DIRECTORY, 
-        title="Select a signal file",
-        filetypes=[("POL Files", "*.pol"), ("HEL Files", "*.hel"), ("All Files", "*.*")]
-    )
+        # Initialize Tkinter file dialog
+        root = tk.Tk()
+        root.withdraw()  # Hide the root window
+
+        # Open file dialog to select a single file
+        file_path = filedialog.askopenfilename(
+            # initialdir=INPUT_DIRECTORY, 
+            title="Select a signal file",
+            filetypes=[("POL Files", "*.pol"), ("HEL Files", "*.hel"), ("All Files", "*.*")]
+        )
 
     # If a file was selected, process it
     if file_path:
         base_filepath, file_extension = os.path.splitext(file_path)
         if file_extension != ".hel" and file_extension != ".pol":
-            print("Only handles [.hel/.pol files], please try again!")
+            logger.info("Only handles [.hel/.pol files], please try again!")
             exit(1)
         transform_signal(base_filepath, file_extension, do_plot=True)  # Enable plotting
     else:
-        print("No file selected.")
+        logger.info("No file selected.")
+
+def translate_windows_to_linux_path(windows_path):
+    """
+    Converts a Windows file path to a Linux file path, handling whitespaces.
+    
+    Args:
+        windows_path (str): The Windows file path to convert.
+    
+    Returns:
+        str: The converted Linux file path.
+    """
+    windows_path = windows_path.strip()
+    linux_path = windows_path.replace("\\", "/")
+    if ":" in linux_path:
+        drive, path = linux_path.split(":", 1)
+        linux_path = f"/mnt/{drive.lower()}{path}"
+    return linux_path
 
 if __name__ == "__main__":
 
@@ -1445,6 +1490,11 @@ if __name__ == "__main__":
         help="Enable file selection mode to process a single file using a file dialog"
     )
     parser.add_argument(
+        "--file-path", 
+        type=str, 
+        help="Specify the file path directly instead of selecting from the dialog"
+    )
+    parser.add_argument(
         "-t", "--file-type", 
         choices=['pol', 'hel'], 
         help="Specify the file type to process. Only 'pol' or 'hel' are allowed."
@@ -1454,16 +1504,41 @@ if __name__ == "__main__":
         default="../output/", 
         help="Specify the input directory containing files to process. Default is '../output/'."
     )
+    parser.add_argument(
+        "-l", "--log-file", 
+        default=None,
+        help="Specify the file to log at."
+    )
     args = parser.parse_args()
 
+
+    # Setup logging
+    if args.log_file != None:
+        log_file_path = args.log_file
+    else: 
+        log_file_path = "./temp.log"
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(log_file_path, mode='a'),
+            logging.StreamHandler()  # Also print logs to the console
+        ]
+    )
+    logger = logging.getLogger(__name__)
+
     # Adjust `file-type` requirement based on `file-select`
-    if not args.file_select and args.file_type is None:
+    if not (args.file_select or args.file_path) and args.file_type is None:
         parser.error("-t/--file-type argument is required")
 
     # Configuration
     INPUT_DIRECTORY = args.input_directory # Root directory containing all date subdirectories
 
-    if args.file_select:
+    if args.file_path:
+        # Direct file path mode
+        select_file_and_transform(translate_windows_to_linux_path(args.file_path))
+        exit(0)
+    elif args.file_select:
         # File selection mode
         print(f"Please select the singal you want to plot.")
         select_file_and_transform()
@@ -1472,23 +1547,23 @@ if __name__ == "__main__":
         # Set global FILE_TYPE based on user input
         FILE_TYPE = f".{args.file_type}"
         validate_file_type(FILE_TYPE)  # Validate the file type
-        print(f"Will process {FILE_TYPE} files from {INPUT_DIRECTORY} dir.")
+        logger.info(f"Will process {FILE_TYPE} files from {INPUT_DIRECTORY} dir.")
         # Directory processing mode
         start_time = time.time()
 
         process_files_in_directory()
         save_zstd_time = time.time() - start_time
         if WORKED>0:
-            print(f"Converting to zstd file format took: {save_zstd_time} seconds")
+            logger.info(f"Converting to zstd file format took: {save_zstd_time} seconds")
              # Write error log to file if there are any errors
             if error_files:
                 with open("error_log.txt", "w") as log_file:
                     log_file.write("Files with errors:\n")
                     log_file.write("\n".join(error_files))
-                print(f"Error log written to 'error_log.txt' with {len(error_files)} entries. (transformed {WORKED} files, n/a fit for {na_fits_num} signals)")
+                logger.error(f"Error log written to 'error_log.txt' with {len(error_files)} entries. (transformed {WORKED} files, n/a fit for {na_fits_num} signals)")
             else:
-                print(f"No errors encountered. (transformed {WORKED} files, n/a fit for {na_fits_num} signals)")
+                logger.info(f"No errors encountered. (transformed {WORKED} files, n/a fit for {na_fits_num} signals)")
             exit(0)
         else:
-            print(f"Nothing happened. (transformed {WORKED} files, n/a fit for {na_fits_num} signals)")
+            logger.info(f"Nothing happened. (transformed {WORKED} files, n/a fit for {na_fits_num} signals)")
             exit(1)

@@ -10,8 +10,9 @@
 #include "signanalysis.h"
 #include <libgen.h>
 #include <errno.h>
+#include "log.h"
 
-#define PROGRESS_BAR_WIDTH 80
+#define PROGRESS_BAR_WIDTH 50
 #define DOWNSAMPLING_FACTOR 30
 #define BAR_UPDATE_FREQUENCY 5
 #define VERSION "1.0"  // Specify the version here
@@ -22,6 +23,8 @@
 #define POLSKI_FRESH_FILE_TYPE ".pol"
 #define HELLENIC_LOGGER_FILE_TYPE ".SRD"
 #define HELLENIC_FRESH_FILE_TYPE ".hel"
+
+FILE *log_file = NULL;  // Definition
 
 // Mode enum
 typedef enum { HELLENIC_LOGGER, POLSKI_LOGGER } Mode;
@@ -40,21 +43,40 @@ int current_dir_file_count = 0;
 size_t OUTPUT_DIR_PATH_LEN = 0;
 size_t OUTPUT_FILE_PATH_LEN = 0;
 
-void print_progress(int progress, int total) {
-    int bar_width = (progress * PROGRESS_BAR_WIDTH) / total;
+#include <stdio.h>
+#include <time.h>
+
+#define PROGRESS_BAR_WIDTH 50
+
+extern time_t start_time;  // Assuming start_time is declared elsewhere
+
+void print_progress(int progress, int total, int simple_mode) {
     time_t current_time = time(NULL);
     double elapsed = difftime(current_time, start_time);
     double remaining = (elapsed / progress) * (total - progress);
-    if (remaining < 0 || remaining > 999999 || progress<70) remaining = 0;  // Sanity check
 
-    printf("\r|");
-    for (int i = 0; i < PROGRESS_BAR_WIDTH; i++)
-        printf(i < bar_width ? "\033[32m█\033[0m" : "\033[91m░\033[0m");
+    if (remaining < 0 || remaining > 999999 || progress < 70) remaining = 0;  // Sanity check
 
-    printf("| %d/%d | Elapsed: %02d:%02d:%02d | Left: %02d:%02d:%02d", 
-           progress, total, 
-           (int)(elapsed / 3600), (int)(elapsed / 60) % 60, (int)elapsed % 60,  // Elapsed (hours, mins, secs)
-           (int)(remaining / 3600), (int)(remaining / 60) % 60, (int)remaining % 60);  // Remaining (hours, mins, secs)
+    if (simple_mode) {
+        // Simple mode: Print only a single line with progress info
+        printf("\rDone: %d/%d | Elapsed: %02d:%02d:%02d | Left: %02d:%02d:%02d",
+               progress, total,
+               (int)(elapsed / 3600), (int)(elapsed / 60) % 60, (int)elapsed % 60,  // Elapsed (hh:mm:ss)
+               (int)(remaining / 3600), (int)(remaining / 60) % 60, (int)remaining % 60);  // Remaining (hh:mm:ss)
+    } else {
+        // Normal mode: Show progress bar
+        int bar_width = (progress * PROGRESS_BAR_WIDTH) / total;
+
+        printf("\r|");
+        for (int i = 0; i < PROGRESS_BAR_WIDTH; i++)
+            printf(i < bar_width ? "\033[32m█\033[0m" : "\033[91m░\033[0m");
+
+        printf("| %d/%d | Elapsed: %02d:%02d:%02d | Left: %02d:%02d:%02d", 
+               progress, total, 
+               (int)(elapsed / 3600), (int)(elapsed / 60) % 60, (int)elapsed % 60,  // Elapsed (hh:mm:ss)
+               (int)(remaining / 3600), (int)(remaining / 60) % 60, (int)remaining % 60);  // Remaining (hh:mm:ss)
+    }
+
     fflush(stdout);
 }
 
@@ -144,7 +166,7 @@ void process_dat_file(const char *file_path) {
     current_dir_file_count++;  // Increment file count for the current directory
     processed_files++;
 
-    if (processed_files % BAR_UPDATE_FREQUENCY == 0) print_progress(processed_files, total_files);
+    if (processed_files % BAR_UPDATE_FREQUENCY == 0) print_progress(processed_files, total_files, 1);
 }
 
 void process_srd_file(const char *file_path) {
@@ -214,7 +236,7 @@ void process_srd_file(const char *file_path) {
     current_dir_file_count++;  // Increment file count for the current directory
     processed_files++;
 
-    if (processed_files % BAR_UPDATE_FREQUENCY == 0) print_progress(processed_files, total_files);
+    if (processed_files % BAR_UPDATE_FREQUENCY == 0) print_progress(processed_files, total_files, 1);
 }
 
 void count_files(const char *dir_path, const char *file_type) {
@@ -268,21 +290,32 @@ void traverse_directory(const char *dir_path) {
             }
         }
     }
-    print_progress(processed_files, total_files);
+    print_progress(processed_files, total_files, 1);
     closedir(dir);
 }
 
 int main(int argc, char *argv[]) {
-    if (argc < 4) {
-        fprintf(stderr, "Usage: %s <mode: pol|hel> <input_dir1> <input_dir2> ... <input_dirN> <output_dir>\n", argv[0]);
+    // if (argc < 4) {
+    //     fprintf(stderr, "Usage: %s <mode: pol|hel> <input_dir1> <input_dir2> ... <input_dirN> <output_dir>\n", argv[0]);
+    //     return 1;
+    // }
+    if (argc < 5) {
+        fprintf(stderr, "Usage: %s <mode: pol|hel> <log_file> <input_dir1> ... <input_dirN> <output_dir>\n", argv[0]);
         return 1;
     }
     start_time = time(NULL);
+    log_file = fopen(argv[2], "a");
+    if (!log_file) {
+        fprintf(stderr, "Error: Could not open log file %s for writing.\n", argv[2]);
+        return 1;
+    }
+    printf("C started logging...\n");
+
     const char *mode_arg = argv[1];
-    NUM_INPUT_DIRS = argc - 3;
+    NUM_INPUT_DIRS = argc - 4;
     INPUT_DIRS = (const char **)malloc(NUM_INPUT_DIRS * sizeof(char *));
     for (int i = 0; i < NUM_INPUT_DIRS; i++) {
-        INPUT_DIRS[i] = argv[i + 2];
+        INPUT_DIRS[i] = argv[i + 3];
     }
     OUTPUT_DIR = argv[argc - 1]; // Last argument is the output directory
     // OUTPUT_DIR = argv[3];
@@ -348,6 +381,7 @@ int main(int argc, char *argv[]) {
     OUTPUT_DIR_PATH_LEN = strlen(OUTPUT_DIR) + strlen("YYYYMMDD") + 2;
     OUTPUT_FILE_PATH_LEN = OUTPUT_DIR_PATH_LEN + strlen("YYYYMMDDHHMMSS.txt") + 2;
 
+    printf("We have %d input directories\n", NUM_INPUT_DIRS);
     for (int i = 0; i < NUM_INPUT_DIRS; i++) {
         const char *input_dir = INPUT_DIRS[i];
         printf("\nProcessing input directory: '%s'\n", input_dir);
@@ -357,7 +391,8 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    printf("\nProcessing complete.\n");
+    printf("\nC Processing complete.\n");
+    fclose(log_file);
     free(INPUT_DIRS);
     return 0;
 }
