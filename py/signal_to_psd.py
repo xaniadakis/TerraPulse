@@ -1167,7 +1167,7 @@ def read_signals(file_path):
     return hns_features, hew_features, harmonics, data
 
 
-def transform_signal(input_filename, file_extension, do_plot=False):
+def transform_signal(input_filename, file_extension, do_plot=False, do_not_fit=False):
     global WORKED, fit_data
     try:
         # Load data from the file
@@ -1178,8 +1178,12 @@ def transform_signal(input_filename, file_extension, do_plot=False):
         file_origin = "Hellenic" if file_extension == '.hel' else "Polski" if file_extension == '.pol' else "Unknown"
 
         try:
-            file_datetime = datetime.datetime.strptime(date_time_str, "%Y%m%d%H%M%S")
-            formatted_datetime = file_datetime.strftime("%Y-%m-%d %H:%M:%S")
+            if file_origin == "Hellenic":
+                file_datetime = datetime.datetime.strptime(date_time_str, "%Y%m%d%H%M%S")
+                formatted_datetime = file_datetime.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                file_datetime = datetime.datetime.strptime(date_time_str, "%Y%m%d%H%M")
+                formatted_datetime = file_datetime.strftime("%Y-%m-%d %H:%M")
         except ValueError:
             formatted_datetime = "Unknown Date-Time"
 
@@ -1230,12 +1234,15 @@ def transform_signal(input_filename, file_extension, do_plot=False):
         if file_origin == "Hellenic":
             sreq1, sreq2 = get_equalizer(frequencies, file_datetime)
             S_NS *= sreq1
-        L1, _, R1, gof1 = sr_fit(frequencies, S_NS, NUM_HARMONICS, input_filename, "NS")
-        if gof1 < 50:
-            _L1, _, _R1, _gof1 = sr_fit(frequencies, S_NS, NUM_HARMONICS, input_filename, "NS", smoothen=True)
-            if _gof1>gof1:
-                print(f"We got {_gof1} gof instead of {gof1} by smoothing NS.")
-                L1, R1, gof1 = _L1, _R1, _gof1
+        if do_not_fit:
+            L1, R1, gof1 = None, None, None
+        else:
+            L1, _, R1, gof1 = sr_fit(frequencies, S_NS, NUM_HARMONICS, input_filename, "NS")
+            if gof1 < 50:
+                _L1, _, _R1, _gof1 = sr_fit(frequencies, S_NS, NUM_HARMONICS, input_filename, "NS", smoothen=True)
+                if _gof1>gof1:
+                    print(f"We got {_gof1} gof instead of {gof1} by smoothing NS.")
+                    L1, R1, gof1 = _L1, _R1, _gof1
         L2, R2, gof2 = None, None, None
         if HEW is not None:
             # Compute PSD for HEW if it exists
@@ -1266,12 +1273,14 @@ def transform_signal(input_filename, file_extension, do_plot=False):
             # Adjust S_EW depending on the file origin
             if file_origin == "Hellenic":
                 S_EW *= sreq2
-            L2, _, R2, gof2 = sr_fit(frequencies, S_EW, NUM_HARMONICS, input_filename, "EW")
-            if gof2 < 50:
-                _L2, _, _R2, _gof2 = sr_fit(frequencies, S_EW, NUM_HARMONICS, input_filename, "EW", smoothen=True)
-                if _gof2>gof2:
-                    print(f"We got {_gof2} gof instead of {gof2} by smoothing EW.")
-                    L2, R2, gof2 = _L2, _R2, _gof2
+
+            if not do_not_fit:
+                L2, _, R2, gof2 = sr_fit(frequencies, S_EW, NUM_HARMONICS, input_filename, "EW")
+                if gof2 < 50:
+                    _L2, _, _R2, _gof2 = sr_fit(frequencies, S_EW, NUM_HARMONICS, input_filename, "EW", smoothen=True)
+                    if _gof2>gof2:
+                        print(f"We got {_gof2} gof instead of {gof2} by smoothing EW.")
+                        L2, R2, gof2 = _L2, _R2, _gof2
         else:
             S_EW = None
 
@@ -1324,8 +1333,9 @@ def transform_signal(input_filename, file_extension, do_plot=False):
         WORKED += 1
 
         fit_data['timestamp'].append(file_datetime)
-        fit_data['NS_fit'].append(gof1 if gof1 > 0 else np.nan)
-        fit_data['EW_fit'].append(gof2 if HEW is not None and gof2 > 0 else (np.nan if HEW is not None else None))
+        if not do_not_fit:
+            fit_data['NS_fit'].append(gof1 if gof1 > 0 else np.nan)
+            fit_data['EW_fit'].append(gof2 if HEW is not None and gof2 > 0 else (np.nan if HEW is not None else None))
 
     except IndexError as ie:
         logger.info(f"Indexing error occurred while processing '{input_filename+file_extension}': {repr(ie)}")
@@ -1439,7 +1449,7 @@ def process_files_in_directory():
 import tkinter as tk
 from tkinter import filedialog
 
-def select_file_and_transform(file_path=None):
+def select_file_and_transform(file_path=None, do_not_fit=False):
     if file_path is None:
 
         # Initialize Tkinter file dialog
@@ -1459,7 +1469,7 @@ def select_file_and_transform(file_path=None):
         if file_extension != ".hel" and file_extension != ".pol":
             logger.info("Only handles [.hel/.pol files], please try again!")
             exit(1)
-        transform_signal(base_filepath, file_extension, do_plot=True)  # Enable plotting
+        transform_signal(base_filepath, file_extension, do_plot=True, do_not_fit=do_not_fit)  # Enable plotting
     else:
         logger.info("No file selected.")
 
@@ -1509,6 +1519,11 @@ if __name__ == "__main__":
         default=None,
         help="Specify the file to log at."
     )
+    parser.add_argument(
+        "--no-fit",
+        action="store_true",
+        help="Disable Lorentzian fitting and only compute PSD"
+    )
     args = parser.parse_args()
 
 
@@ -1536,7 +1551,7 @@ if __name__ == "__main__":
 
     if args.file_path:
         # Direct file path mode
-        select_file_and_transform(translate_windows_to_linux_path(args.file_path))
+        select_file_and_transform(translate_windows_to_linux_path(args.file_path), args.no_fit)
         exit(0)
     elif args.file_select:
         # File selection mode
