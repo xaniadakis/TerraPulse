@@ -5,3 +5,5 @@
 /matlab/resources/
 *output*/
 
+# Exception for earthquakes_db/output
+!earthquakes_db/output/
