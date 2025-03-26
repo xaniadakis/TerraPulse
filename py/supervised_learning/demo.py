@@ -3,6 +3,16 @@ import os
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, accuracy_score
+from tqdm import tqdm
+import os
+import numpy as np
+import pandas as pd
+import zstandard as zstd
+from pathlib import Path
+from sklearn.preprocessing import StandardScaler, RobustScaler, MinMaxScaler, MaxAbsScaler
+from sklearn.decomposition import PCA
+from sklearn.model_selection import GroupShuffleSplit
+from xgboost import XGBClassifier
 
 # Get current working directory (assumes script is run from project root)
 project_dir = os.getcwd()
@@ -18,13 +28,6 @@ eq_df["DATETIME"] = eq_df["DATETIME"].dt.strftime('%Y%m%d%H%M')
 
 print(eq_df.head())
 #####################################################################################
-import os
-import numpy as np
-import pandas as pd
-import zstandard as zstd
-from pathlib import Path
-from sklearn.preprocessing import StandardScaler, RobustScaler, MinMaxScaler, MaxAbsScaler
-from sklearn.decomposition import PCA
 
 # Constants
 MIN_FREQ = 3  # Minimum frequency in Hz
@@ -64,13 +67,19 @@ def extract_psd_data(file_path):
 
 
 # Load dataset from directory
-def load_dataset(data_dir):
+def load_dataset(data_dir, limit_fraction=0.1):
     data_dir = os.path.expanduser(data_dir)
     all_files = sorted(Path(data_dir).rglob("*.zst"))
     all_data = []
-    print(f"Found {len(all_files)} files. Extracting PSD data...")
 
-    for file in all_files:
+    # Limit to first 10% of files
+    limit = int(len(all_files) * limit_fraction)
+    limited_files = all_files[:limit]
+
+    all_data = []
+    print(f"Found {len(all_files)} files. Processing {len(limited_files)} files ({limit_fraction*100}%)...")
+
+    for file in tqdm(limited_files, desc="Extracting"):
         data = extract_psd_data(file)
         if data:
             all_data.append(data)
@@ -124,7 +133,7 @@ def prepare_dataset(data_dir, scaler_type='MaxAbsScaler', variance_threshold=0.9
     return df_pca
 
 # Set the data directory
-DATA_DIR = "~/Documents/POLSKI_SAMPLES"
+DATA_DIR = "/mnt/e/NEW_POLSKI_DB"
 
 # Call the function to load, scale, and apply PCA
 df_expanded = prepare_dataset(DATA_DIR)
@@ -183,7 +192,7 @@ df_expanded = df_expanded.drop(columns=["timestamp"])
 # # Split into train-test sets
 # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=68, stratify=y)
 
-from sklearn.model_selection import GroupShuffleSplit
+
 
 # Create a unique event ID for each earthquake occurrence
 df_expanded["event_group"] = (df_expanded["earthquake_label"].diff() != 0).cumsum()
@@ -233,7 +242,6 @@ y_pred = rf.predict(X_test)
 # Evaluate the model
 print("Random Forest Performance:\n", classification_report(y_test, y_pred))
 
-from xgboost import XGBClassifier
 
 xgb = XGBClassifier(n_estimators=100, learning_rate=0.1, scale_pos_weight=1000, random_state=42)
 xgb.fit(X_train, y_train)
