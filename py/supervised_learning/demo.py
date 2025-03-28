@@ -123,8 +123,8 @@ def apply_pca(features_scaled, variance_threshold=0.98):
 
 
 # Prepare final dataset
-def prepare_dataset(data_dir, scaler_type='MaxAbsScaler', variance_threshold=0.98):
-    df_expanded = load_dataset(data_dir)
+def prepare_dataset(data_dir, scaler_type='MaxAbsScaler', variance_threshold=0.98, limit_fraction=0.1):
+    df_expanded = load_dataset(data_dir, limit_fraction)
     features_scaled, scaler = scale_dataset(df_expanded, scaler_type)
     pca_transformed, pca = apply_pca(features_scaled, variance_threshold)
     pca_columns = [f'PC{i + 1}' for i in range(pca.n_components_)]
@@ -133,10 +133,10 @@ def prepare_dataset(data_dir, scaler_type='MaxAbsScaler', variance_threshold=0.9
     return df_pca
 
 # Set the data directory
-DATA_DIR = "/mnt/e/NEW_POLSKI_DB"
+DATA_DIR = "~/Documents/POLSKI_SAMPLES" #"/mnt/e/NEW_POLSKI_DB"
 
 # Call the function to load, scale, and apply PCA
-df_expanded = prepare_dataset(DATA_DIR)
+df_expanded = prepare_dataset(DATA_DIR, limit_fraction=1)
 
 # Check the outputs
 print(df_expanded.head())  # Raw dataset
@@ -160,6 +160,10 @@ for eq_time in eq_df["timestamp"]:
         # Ensure this timestamp is close to the earthquake (e.g., same day)
         if (eq_time - past_timestamps.loc[closest_idx, "timestamp"]) < pd.Timedelta(days=1):
             df_expanded.at[closest_idx, "earthquake_label"] = 1  # Mark it as earthquake-related
+# for eq_time in eq_df["timestamp"]:
+#     mask = (df_expanded["timestamp"] >= eq_time - pd.Timedelta(hours=3)) & \
+#            (df_expanded["timestamp"] < eq_time)
+#     df_expanded.loc[mask, "earthquake_label"] = 1
 
 # Count the number of rows where earthquake_label is 1
 num_eq = df_expanded[df_expanded["earthquake_label"] == 1].shape[0]
