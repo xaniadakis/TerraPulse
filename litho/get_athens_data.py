@@ -136,8 +136,19 @@ for year in years:
             break
 
 # Convert availability stats to DataFrame
-availability_df = pd.DataFrame(availability_stats)
-output_path = os.path.join(output_dir, f"column_availability.csv")
+output_path = os.path.join(output_dir, "column_availability.csv")
+
+# Load existing data if it exists
+if os.path.exists(output_path):
+    existing_df = pd.read_csv(output_path)
+    # Drop any overlapping entries (same year, month, column)
+    existing_df = existing_df[~existing_df.set_index(['year', 'month', 'column']).index.isin(
+        pd.DataFrame(availability_stats).set_index(['year', 'month', 'column']).index
+    )]
+    # Combine old (filtered) + new
+    availability_df = pd.concat([existing_df, pd.DataFrame(availability_stats)], ignore_index=True)
+else:
+    availability_df = pd.DataFrame(availability_stats)
 availability_df.to_csv(output_path, index=False)
 
 for year, group in availability_df.groupby("year"):
