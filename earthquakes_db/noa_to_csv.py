@@ -2,6 +2,7 @@ import csv
 import os
 from geopy.distance import geodesic
 
+script_dir = os.path.dirname(os.path.abspath(__file__))  # Get the directory of the script
 kalpaki_location = (39.9126, 20.5888)
 parnon_location=(37.2609, 22.5847)
 
@@ -12,7 +13,7 @@ def distance_between_locations(coil_location, earthquake_location=(37.7749, -122
     return distance
 
 # Create an output directory if it doesn't exist
-output_dir = "./output"
+output_dir = os.path.join(script_dir, "output")
 os.makedirs(output_dir, exist_ok=True)
 
 # Function to process a single text file
@@ -66,10 +67,12 @@ def process_text_file(file_path):
         print(f"   Rows in TXT: {txt_row_count}, Rows in CSV: {csv_row_count}")
 
 # Detect all .txt files in the current directory
-txt_files = [f for f in os.listdir(".") if f.endswith(".txt")]
+txt_files = [f for f in os.listdir(script_dir) if f.endswith(".txt")]
 
 # Process each .txt file
 for txt_file in txt_files:
-    process_text_file(txt_file)
+    file_path = os.path.join(script_dir, txt_file)  # Get the full path
+    process_text_file(file_path)  # Pass the full path to the function
+
 
 print("All files processed.")

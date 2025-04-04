@@ -1167,7 +1167,7 @@ def read_signals(file_path):
     return hns_features, hew_features, harmonics, data
 
 
-def transform_signal(input_filename, file_extension, do_plot=False, do_not_fit=False):
+def transform_signal(input_filename, file_extension, do_plot=False, do_not_fit=False, gui=False):
     global WORKED, fit_data
     try:
         # Load data from the file
@@ -1314,7 +1314,10 @@ def transform_signal(input_filename, file_extension, do_plot=False, do_not_fit=F
             cursor.connect("add", lambda sel: sel.annotation.set_text(f"x={sel.target[0]:.2f}, y={sel.target[1]:.2f}"))
 
             plt.tight_layout()
-            plt.show()
+            if not gui:
+                plt.show()
+            else:
+                return plt.gcf()
 
         # Save results
         buffer = io.BytesIO()
@@ -1490,6 +1493,164 @@ def translate_windows_to_linux_path(windows_path):
         linux_path = f"/mnt/{drive.lower()}{path}"
     return linux_path
 
+def start_gui_browser(file_extension=".pol", do_not_fit=True):
+    import tkinter as tk
+    from tkinter import filedialog, messagebox
+    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+    import os
+    import datetime
+
+    current_index = 0
+    file_list = []
+    canvas = None
+    toolbar = None
+    current_folder = ""
+
+    root = tk.Tk()
+    root.title("Signal Explorer")
+
+    control_frame = tk.Frame(root)
+    control_frame.pack(padx=10, pady=10)
+
+    plot_frame = tk.Frame(root)
+    plot_frame.pack(fill=tk.BOTH, expand=True)
+
+    def load_files_from_folder(folder):
+        nonlocal file_list, current_index, current_folder
+        file_list = sorted([
+            os.path.join(folder, f)
+            for f in os.listdir(folder)
+            if f.endswith(file_extension)
+        ])
+        if not file_list:
+            messagebox.showwarning("No Files", f"No {file_extension} files found.")
+            return
+        current_index = 0
+        current_folder = folder
+        for widget in goto_widgets:
+            widget.grid()
+        load_signal()
+
+    def browse_folder():
+        folder_selected = filedialog.askdirectory(title="Select Signal Folder")
+        if not folder_selected:
+            return
+        load_files_from_folder(folder_selected)
+
+    def load_signal():
+        nonlocal canvas, toolbar
+        if not file_list:
+            return
+        file_path = file_list[current_index]
+        base_path, ext = os.path.splitext(file_path)
+        print(f"Loading: {file_path}")
+        fig = transform_signal(base_path, ext, do_plot=True, do_not_fit=do_not_fit, gui=True)
+        if fig is None:
+            return
+        for widget in plot_frame.winfo_children():
+            widget.destroy()
+        canvas = FigureCanvasTkAgg(fig, master=plot_frame)
+        canvas.draw()
+        canvas_widget = canvas.get_tk_widget()
+        canvas_widget.pack(fill=tk.BOTH, expand=True)
+        toolbar = NavigationToolbar2Tk(canvas, plot_frame)
+        toolbar.update()
+        toolbar.pack(side=tk.BOTTOM, fill=tk.X)
+
+    def next_signal():
+        nonlocal current_index
+        if current_index < len(file_list) - 1:
+            current_index += 1
+            load_signal()
+
+    def prev_signal():
+        nonlocal current_index
+        if current_index > 0:
+            current_index -= 1
+            load_signal()
+
+    def goto_time():
+        nonlocal current_index
+        try:
+            hh = int(hour_entry.get())
+            mm = int(minute_entry.get())
+        except ValueError:
+            messagebox.showerror("Invalid Input", "Hour and minute must be integers.")
+            return
+        if not (0 <= hh <= 23):
+            messagebox.showerror("Invalid Hour", "Hour must be between 0 and 23.")
+            return
+        if not (0 <= mm <= 59):
+            messagebox.showerror("Invalid Minute", "Minute must be between 0 and 59.")
+            return
+        mm -= mm % 5
+        hh_str = f"{hh:02d}"
+        mm_str = f"{mm:02d}"
+        for i, f in enumerate(file_list):
+            fname = os.path.basename(f)
+            if file_extension == ".hel" and fname[8:12] == hh_str + mm_str:
+                current_index = i
+                load_signal()
+                return
+            elif file_extension == ".pol" and fname[8:10] == hh_str and fname[10:12] == mm_str:
+                current_index = i
+                load_signal()
+                return
+        messagebox.showinfo("Not Found", f"No file found with time {hh_str}:{mm_str}")
+
+    def load_from_calendar():
+        nonlocal current_folder
+        y = year_var.get()
+        m = month_var.get()
+        d = day_var.get()
+        if not (y and m and d):
+            messagebox.showerror("Invalid Date", "Please select year, month, and day.")
+            return
+        try:
+            selected_date = datetime.date(int(y), int(m), int(d))
+            parent_dir = os.path.dirname(current_folder)
+            target_folder = os.path.join(parent_dir, selected_date.strftime("%Y%m%d"))  # fixed here
+            if os.path.isdir(target_folder):
+                load_files_from_folder(target_folder)
+            else:
+                messagebox.showinfo("Not Found", f"No folder for {selected_date.strftime('%Y%m%d')}")
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
+
+    # Main controls
+    tk.Button(control_frame, text="Select Folder", command=browse_folder).grid(row=0, column=0, padx=5)
+    tk.Button(control_frame, text="Previous", command=prev_signal).grid(row=0, column=1, padx=5)
+    tk.Button(control_frame, text="Next", command=next_signal).grid(row=0, column=2, padx=5)
+
+    hour_label = tk.Label(control_frame, text="Hour:")
+    hour_entry = tk.Entry(control_frame, width=3)
+    minute_label = tk.Label(control_frame, text="Minute:")
+    minute_entry = tk.Entry(control_frame, width=3)
+    goto_button = tk.Button(control_frame, text="Go To", command=goto_time)
+
+    goto_widgets = [hour_label, hour_entry, minute_label, minute_entry, goto_button]
+    positions = [3, 4, 5, 6, 7]
+    for widget, col in zip(goto_widgets, positions):
+        widget.grid(row=0, column=col, padx=(5 if col in (3, 5) else 2), sticky="w")
+        widget.grid_remove()
+
+    # Calendar dropdowns
+    year_var = tk.StringVar()
+    month_var = tk.StringVar()
+    day_var = tk.StringVar()
+    current_year = datetime.datetime.now().year
+    years = [str(y) for y in range(2015, current_year + 1)]
+    months = [str(m).zfill(2) for m in range(1, 13)]
+    days = [str(d).zfill(2) for d in range(1, 32)]
+
+    tk.Label(control_frame).grid(row=1, column=0, pady=5)
+    tk.OptionMenu(control_frame, year_var, *years).grid(row=1, column=1)
+    tk.OptionMenu(control_frame, month_var, *months).grid(row=1, column=2)
+    tk.OptionMenu(control_frame, day_var, *days).grid(row=1, column=3)
+    tk.Button(control_frame, text="Load Date Folder", command=load_from_calendar).grid(row=1, column=4, padx=5)
+
+    root.mainloop()
+
 if __name__ == "__main__":
 
     # Parse command-line arguments
@@ -1524,6 +1685,11 @@ if __name__ == "__main__":
         action="store_true",
         help="Disable Lorentzian fitting and only compute PSD"
     )
+    parser.add_argument(
+        "--gui",
+        action="store_true",
+        help="Enable GUI mode to browse and plot signals in a folder"
+    )
     args = parser.parse_args()
 
 
@@ -1545,6 +1711,10 @@ if __name__ == "__main__":
     # Adjust `file-type` requirement based on `file-select`
     if not (args.file_select or args.file_path) and args.file_type is None:
         parser.error("-t/--file-type argument is required")
+
+    if args.gui:
+        start_gui_browser(file_extension=f".{args.file_type or 'pol'}", do_not_fit=args.no_fit)
+        exit(0)
 
     # Configuration
     INPUT_DIRECTORY = args.input_directory # Root directory containing all date subdirectories

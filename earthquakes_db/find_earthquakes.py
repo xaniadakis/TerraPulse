@@ -4,11 +4,13 @@ from geopy.distance import geodesic
 import pandas as pd
 from tqdm import tqdm
 
+SOUTH = True
 output_dir = "/mnt/c/Users/shumann/Documents/GaioPulse/earthquakes_db/output"
+output_dir = "/home/vag/PycharmProjects/TerraPulse/earthquakes_db/output"
 
 # Boolean constant to decide the distance calculation method
 USE_HYPOTENUSE = True
-DOBROWOLSKY_TOLERANCE_FACTOR = 0.1
+DOBROWOLSKY_TOLERANCE_FACTOR = 0.25
 
 # Load all CSVs into a single DataFrame
 csv_files = [
@@ -42,13 +44,17 @@ combined_df['DEPTH'] = pd.to_numeric(combined_df['DEPTH'], errors='coerce')
 # Define Parnon location
 parnon_location = (37.2609, 22.5847)
 kalpaki_location = (39.9126, 20.5888)
+if SOUTH:
+    coil_location = parnon_location
+else:
+    coil_location = kalpaki_location
 
 # Calculate distance for each row
 def calculate_distance(row):
     event_location = (row['LAT'], row['LONG'])
     depth = row['DEPTH']  # Depth in kilometers
     if pd.notnull(event_location[0]) and pd.notnull(event_location[1]):
-        surface_distance = geodesic(kalpaki_location, event_location).kilometers
+        surface_distance = geodesic(coil_location, event_location).kilometers
         if USE_HYPOTENUSE and pd.notnull(depth):
             return sqrt(surface_distance**2 + depth**2)  # Hypotenuse distance
         return surface_distance  # Surface distance
@@ -107,7 +113,12 @@ print("Sorting Dobrowolsky-valid rows by date...")
 dobrowolsky_df = dobrowolsky_df.sort_values(by='DATETIME', ascending=True)
 
 # Save the filtered DataFrame to a new CSV file
-dobrowolsky_csv = os.path.join(output_dir, "dobrowolsky_valid_rows.csv")
+if SOUTH:
+    filename = "dobrowolsky_parnon.csv"
+else:
+    filename = "dobrowolsky_kalpaki.csv"
+
+dobrowolsky_csv = os.path.join(output_dir, filename)
 dobrowolsky_df.to_csv(dobrowolsky_csv, index=False)
 
 print(f"Dobrowolsky valid rows saved to {dobrowolsky_csv}")
