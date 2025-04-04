@@ -1210,6 +1210,8 @@ def transform_signal(input_filename, file_extension, do_plot=False, do_not_fit=F
             plt.title(f"{file_origin}-Logger Time-Domain Signal\n{formatted_datetime}")
             plt.ylabel("B [pT]")
             plt.xlabel("Time [sec]")
+            plt.xticks(np.arange(0, timespace[-1], step=30))
+            plt.xlim([0,300])
             plt.grid(ls=':')
             plt.legend()
 
@@ -1305,7 +1307,7 @@ def transform_signal(input_filename, file_extension, do_plot=False, do_not_fit=F
             plt.title(f"{file_origin}-Logger Frequency-Domain Signal\n{formatted_datetime}")
             plt.ylabel(r"$PSD\ [pT^2/Hz]$")
             plt.xlabel("Frequency [Hz]")
-            plt.xticks(np.arange(0, 50, step=5))
+            plt.xticks(sorted(set(np.append(np.arange(0, 50, 5), [3, 48]))))
             plt.grid(ls=':')
             plt.legend()
             
@@ -1500,6 +1502,8 @@ def start_gui_browser(file_extension=".pol", do_not_fit=True):
     import os
     import datetime
 
+    year_menu = month_menu = day_menu = None
+    hour_menu = minute_menu = None
     current_index = 0
     file_list = []
     canvas = None
@@ -1509,11 +1513,23 @@ def start_gui_browser(file_extension=".pol", do_not_fit=True):
     root = tk.Tk()
     root.title("Signal Explorer")
 
+    root.grid_columnconfigure(0, weight=1)
+    root.grid_rowconfigure(1, weight=1)
+
     control_frame = tk.Frame(root)
-    control_frame.pack(padx=10, pady=10)
+    control_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
 
     plot_frame = tk.Frame(root)
-    plot_frame.pack(fill=tk.BOTH, expand=True)
+    plot_frame.grid(row=1, column=0, sticky="nsew")
+
+    calendar_frame = tk.Frame(control_frame)
+    time_frame = tk.Frame(control_frame)
+
+    year_var = tk.StringVar()
+    month_var = tk.StringVar()
+    day_var = tk.StringVar()
+    hour_var = tk.StringVar()
+    minute_var = tk.StringVar()
 
     def load_files_from_folder(folder):
         nonlocal file_list, current_index, current_folder
@@ -1527,8 +1543,8 @@ def start_gui_browser(file_extension=".pol", do_not_fit=True):
             return
         current_index = 0
         current_folder = folder
-        for widget in goto_widgets:
-            widget.grid()
+        setup_calendar_dropdowns()
+        setup_time_dropdowns()
         load_signal()
 
     def browse_folder():
@@ -1551,11 +1567,12 @@ def start_gui_browser(file_extension=".pol", do_not_fit=True):
             widget.destroy()
         canvas = FigureCanvasTkAgg(fig, master=plot_frame)
         canvas.draw()
-        canvas_widget = canvas.get_tk_widget()
-        canvas_widget.pack(fill=tk.BOTH, expand=True)
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
         toolbar = NavigationToolbar2Tk(canvas, plot_frame)
         toolbar.update()
         toolbar.pack(side=tk.BOTTOM, fill=tk.X)
+        prev_button.grid()
+        next_button.grid()
 
     def next_signal():
         nonlocal current_index
@@ -1571,21 +1588,13 @@ def start_gui_browser(file_extension=".pol", do_not_fit=True):
 
     def goto_time():
         nonlocal current_index
-        try:
-            hh = int(hour_entry.get())
-            mm = int(minute_entry.get())
-        except ValueError:
-            messagebox.showerror("Invalid Input", "Hour and minute must be integers.")
+        hh = hour_var.get()
+        mm = minute_var.get()
+        if not (hh.isdigit() and mm.isdigit()):
+            messagebox.showerror("Invalid Input", "Hour and Minute must be numeric.")
             return
-        if not (0 <= hh <= 23):
-            messagebox.showerror("Invalid Hour", "Hour must be between 0 and 23.")
-            return
-        if not (0 <= mm <= 59):
-            messagebox.showerror("Invalid Minute", "Minute must be between 0 and 59.")
-            return
-        mm -= mm % 5
-        hh_str = f"{hh:02d}"
-        mm_str = f"{mm:02d}"
+        hh_str = f"{int(hh):02d}"
+        mm_str = f"{int(mm):02d}"
         for i, f in enumerate(file_list):
             fname = os.path.basename(f)
             if file_extension == ".hel" and fname[8:12] == hh_str + mm_str:
@@ -1599,7 +1608,6 @@ def start_gui_browser(file_extension=".pol", do_not_fit=True):
         messagebox.showinfo("Not Found", f"No file found with time {hh_str}:{mm_str}")
 
     def load_from_calendar():
-        nonlocal current_folder
         y = year_var.get()
         m = month_var.get()
         d = day_var.get()
@@ -1609,7 +1617,7 @@ def start_gui_browser(file_extension=".pol", do_not_fit=True):
         try:
             selected_date = datetime.date(int(y), int(m), int(d))
             parent_dir = os.path.dirname(current_folder)
-            target_folder = os.path.join(parent_dir, selected_date.strftime("%Y%m%d"))  # fixed here
+            target_folder = os.path.join(parent_dir, selected_date.strftime("%Y%m%d"))
             if os.path.isdir(target_folder):
                 load_files_from_folder(target_folder)
             else:
@@ -1617,39 +1625,127 @@ def start_gui_browser(file_extension=".pol", do_not_fit=True):
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
-    # Main controls
-    tk.Button(control_frame, text="Select Folder", command=browse_folder).grid(row=0, column=0, padx=5)
-    tk.Button(control_frame, text="Previous", command=prev_signal).grid(row=0, column=1, padx=5)
-    tk.Button(control_frame, text="Next", command=next_signal).grid(row=0, column=2, padx=5)
+    def setup_calendar_dropdowns():
+        nonlocal year_menu, month_menu, day_menu
+        for widget in calendar_frame.winfo_children():
+            widget.destroy()
 
-    hour_label = tk.Label(control_frame, text="Hour:")
-    hour_entry = tk.Entry(control_frame, width=3)
-    minute_label = tk.Label(control_frame, text="Minute:")
-    minute_entry = tk.Entry(control_frame, width=3)
-    goto_button = tk.Button(control_frame, text="Go To", command=goto_time)
+        available_dates = set()
+        for root_, dirs, _ in os.walk(os.path.dirname(current_folder)):
+            for d in dirs:
+                if len(d) == 8 and d.isdigit():
+                    try:
+                        dt = datetime.datetime.strptime(d, "%Y%m%d")
+                        available_dates.add(dt.date())
+                    except:
+                        continue
 
-    goto_widgets = [hour_label, hour_entry, minute_label, minute_entry, goto_button]
-    positions = [3, 4, 5, 6, 7]
-    for widget, col in zip(goto_widgets, positions):
-        widget.grid(row=0, column=col, padx=(5 if col in (3, 5) else 2), sticky="w")
-        widget.grid_remove()
+        if not available_dates:
+            return
 
-    # Calendar dropdowns
-    year_var = tk.StringVar()
-    month_var = tk.StringVar()
-    day_var = tk.StringVar()
-    current_year = datetime.datetime.now().year
-    years = [str(y) for y in range(2015, current_year + 1)]
-    months = [str(m).zfill(2) for m in range(1, 13)]
-    days = [str(d).zfill(2) for d in range(1, 32)]
+        years = sorted(set(str(dt.year) for dt in available_dates))
 
-    tk.Label(control_frame).grid(row=1, column=0, pady=5)
-    tk.OptionMenu(control_frame, year_var, *years).grid(row=1, column=1)
-    tk.OptionMenu(control_frame, month_var, *months).grid(row=1, column=2)
-    tk.OptionMenu(control_frame, day_var, *days).grid(row=1, column=3)
-    tk.Button(control_frame, text="Load Date Folder", command=load_from_calendar).grid(row=1, column=4, padx=5)
+        def update_months(*args):
+            selected_year = year_var.get()
+            if not selected_year:
+                return
+            months = sorted(set(dt.month for dt in available_dates if str(dt.year) == selected_year))
+            if month_menu:
+                month_menu['menu'].delete(0, 'end')
+                for m in months:
+                    month_menu['menu'].add_command(label=str(m).zfill(2), command=tk._setit(month_var, str(m).zfill(2)))
+                month_var.set('')
+                day_var.set('')
+                update_days()
 
+        def update_days(*args):
+            selected_year = year_var.get()
+            selected_month = month_var.get()
+            if not (selected_year and selected_month):
+                return
+            days = sorted(set(dt.day for dt in available_dates if str(dt.year) == selected_year and str(dt.month).zfill(2) == selected_month))
+            if day_menu:
+                day_menu['menu'].delete(0, 'end')
+                for d in days:
+                    day_menu['menu'].add_command(label=str(d).zfill(2), command=tk._setit(day_var, str(d).zfill(2)))
+                day_var.set('')
+
+        year_var.trace("w", update_months)
+        month_var.trace("w", update_days)
+
+        year_var.set("Year")
+        year_menu = tk.OptionMenu(calendar_frame, year_var, *(["Year"] + years))
+        year_menu.pack(side=tk.LEFT, padx=2)
+
+        month_var.set("Month")
+        month_menu = tk.OptionMenu(calendar_frame, month_var, "Month")
+        month_menu.pack(side=tk.LEFT, padx=2)
+
+        day_var.set("Day")
+        day_menu = tk.OptionMenu(calendar_frame, day_var, "Day")
+        day_menu.pack(side=tk.LEFT, padx=2)
+
+        tk.Button(calendar_frame, text="Load Date Folder", command=load_from_calendar).pack(side=tk.LEFT, padx=5)
+        calendar_frame.grid(row=0, column=2, padx=10, sticky="w")
+
+    def setup_time_dropdowns():
+        nonlocal hour_menu, minute_menu
+        for widget in time_frame.winfo_children():
+            widget.destroy()
+
+        hours = sorted(set(os.path.basename(f)[8:10] for f in file_list))
+        hour_var.set("Hour")
+        hour_menu = tk.OptionMenu(time_frame, hour_var, *hours)
+        hour_menu.grid(row=0, column=0, padx=(0, 2))
+
+        def update_minutes(*args):
+            selected_hour = hour_var.get()
+            if not selected_hour:
+                return
+            minutes = sorted(set(os.path.basename(f)[10:12] for f in file_list if os.path.basename(f)[8:10] == selected_hour))
+            if minute_menu:
+                minute_menu['menu'].delete(0, 'end')
+                for m in minutes:
+                    minute_menu['menu'].add_command(label=m, command=tk._setit(minute_var, m))
+                minute_var.set("")
+
+        hour_var.trace("w", update_minutes)
+
+        minute_var.set("Minute")
+        minute_menu = tk.OptionMenu(time_frame, minute_var, "Minute")
+        minute_menu.grid(row=0, column=1, padx=(2, 5))
+
+        tk.Button(time_frame, text="Go To", command=goto_time).grid(row=0, column=2, padx=(5, 0))
+        time_frame.grid(row=0, column=3, padx=(10, 5), sticky="w")
+
+    prev_button = tk.Button(control_frame, text="Previous", command=prev_signal)
+    next_button = tk.Button(control_frame, text="Next", command=next_signal)
+
+    control_frame.grid_columnconfigure(0, weight=0)
+    control_frame.grid_columnconfigure(1, weight=0)
+    control_frame.grid_columnconfigure(2, weight=0)
+    control_frame.grid_columnconfigure(3, weight=0)
+    control_frame.grid_columnconfigure(4, weight=1)
+    control_frame.grid_columnconfigure(5, weight=0)
+
+    prev_button.grid(row=0, column=0, sticky="w", padx=(0, 10))
+    tk.Button(control_frame, text="Select Folder", command=browse_folder).grid(row=0, column=1, padx=5, sticky="w")
+    calendar_frame.grid(row=0, column=2, padx=10, sticky="w")
+    time_frame.grid(row=0, column=3, padx=5, sticky="w")
+    next_button.grid(row=0, column=5, sticky="e", padx=(10, 0))
+
+    prev_button.grid_remove()
+    next_button.grid_remove()
+
+    import sys
+
+    def on_close(r):
+        r.destroy()
+        sys.exit()
+
+    root.protocol("WM_DELETE_WINDOW", lambda: on_close(root))
     root.mainloop()
+
 
 if __name__ == "__main__":
 
