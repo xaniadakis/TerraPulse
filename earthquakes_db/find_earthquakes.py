@@ -87,22 +87,31 @@ combined_df['DOBROWOLSKY'] = list(
     tqdm(combined_df.apply(apply_dobrowolsky_law, axis=1), desc="Applying Dobrowolsky", total=len(combined_df))
 )
 
-# Add a unique ID column to combined DataFrame
-print("Adding unique ID column...")
-combined_df.insert(0, 'ID', range(1, len(combined_df) + 1))
-
 # Filter rows where Dobrowolsky law applies
 print("Filtering rows where Dobrowolsky law applies...")
-dobrowolsky_df = combined_df[combined_df['DOBROWOLSKY'] == 1]
+dobrowolsky_df = combined_df[combined_df['DOBROWOLSKY'] == 1].copy()
 
-
+# Convert date and time to datetime
 dobrowolsky_df["DATE"] = pd.to_datetime(dobrowolsky_df["DATE"])
-# Parse TIME as a timedelta (hours, minutes, seconds)
 dobrowolsky_df["TIME"] = pd.to_timedelta(dobrowolsky_df["TIME"].str.replace(' ', ':'))
-# Add TIME as timedelta to DATE to create DATETIME
 dobrowolsky_df["DATETIME"] = dobrowolsky_df["DATE"] + dobrowolsky_df["TIME"]
-# Drop the DATE, TIME columns
 dobrowolsky_df.drop(columns=["DATE", "TIME"], inplace=True)
+
+# Sort and reindex
+print("Sorting Dobrowolsky-valid rows by date...")
+dobrowolsky_df = dobrowolsky_df.sort_values(by='DATETIME', ascending=True).reset_index(drop=True)
+
+# Insert new ID
+dobrowolsky_df.insert(0, 'ID', range(1, len(dobrowolsky_df) + 1))
+
+
+# dobrowolsky_df["DATE"] = pd.to_datetime(dobrowolsky_df["DATE"])
+# # Parse TIME as a timedelta (hours, minutes, seconds)
+# dobrowolsky_df["TIME"] = pd.to_timedelta(dobrowolsky_df["TIME"].str.replace(' ', ':'))
+# # Add TIME as timedelta to DATE to create DATETIME
+# dobrowolsky_df["DATETIME"] = dobrowolsky_df["DATE"] + dobrowolsky_df["TIME"]
+# # Drop the DATE, TIME columns
+# dobrowolsky_df.drop(columns=["DATE", "TIME"], inplace=True)
 # Move the DATETIME column to the second position
 cols = list(dobrowolsky_df.columns)
 cols.insert(1, cols.pop(cols.index("DATETIME")))  # Move DATETIME to the second position
