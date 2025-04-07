@@ -1501,6 +1501,7 @@ def start_gui_browser(file_extension=".pol", do_not_fit=True):
     from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
     import os
     import datetime
+    import sys
 
     year_menu = month_menu = day_menu = None
     hour_menu = minute_menu = None
@@ -1521,9 +1522,6 @@ def start_gui_browser(file_extension=".pol", do_not_fit=True):
 
     plot_frame = tk.Frame(root)
     plot_frame.grid(row=1, column=0, sticky="nsew")
-
-    calendar_frame = tk.Frame(control_frame)
-    time_frame = tk.Frame(control_frame)
 
     year_var = tk.StringVar()
     month_var = tk.StringVar()
@@ -1549,9 +1547,8 @@ def start_gui_browser(file_extension=".pol", do_not_fit=True):
 
     def browse_folder():
         folder_selected = filedialog.askdirectory(title="Select Signal Folder")
-        if not folder_selected:
-            return
-        load_files_from_folder(folder_selected)
+        if folder_selected:
+            load_files_from_folder(folder_selected)
 
     def load_signal():
         nonlocal canvas, toolbar
@@ -1676,17 +1673,21 @@ def start_gui_browser(file_extension=".pol", do_not_fit=True):
         year_var.set("Year")
         year_menu = tk.OptionMenu(calendar_frame, year_var, *(["Year"] + years))
         year_menu.pack(side=tk.LEFT, padx=2)
+        year_menu.config(bg="#007acc", fg="white", activebackground="#005f99", activeforeground="white")
 
         month_var.set("Month")
         month_menu = tk.OptionMenu(calendar_frame, month_var, "Month")
         month_menu.pack(side=tk.LEFT, padx=2)
+        month_menu.config(bg="#007acc", fg="white", activebackground="#005f99", activeforeground="white")
 
         day_var.set("Day")
         day_menu = tk.OptionMenu(calendar_frame, day_var, "Day")
         day_menu.pack(side=tk.LEFT, padx=2)
+        day_menu.config(bg="#007acc", fg="white", activebackground="#005f99", activeforeground="white")
 
-        tk.Button(calendar_frame, text="Load Date Folder", command=load_from_calendar).pack(side=tk.LEFT, padx=5)
-        calendar_frame.grid(row=0, column=2, padx=10, sticky="w")
+        load_button = tk.Button(calendar_frame, text="Load Date Folder", command=load_from_calendar)
+        load_button.pack(side=tk.LEFT, padx=5)
+        load_button.config(bg="#007acc", fg="white", activebackground="#005f99", activeforeground="white")
 
     def setup_time_dropdowns():
         nonlocal hour_menu, minute_menu
@@ -1696,13 +1697,15 @@ def start_gui_browser(file_extension=".pol", do_not_fit=True):
         hours = sorted(set(os.path.basename(f)[8:10] for f in file_list))
         hour_var.set("Hour")
         hour_menu = tk.OptionMenu(time_frame, hour_var, *hours)
-        hour_menu.grid(row=0, column=0, padx=(0, 2))
+        hour_menu.pack(side=tk.LEFT, padx=(0, 2))
+        hour_menu.config(bg="#48A6A7", fg="black", activebackground="#e6c200", activeforeground="black")
 
         def update_minutes(*args):
             selected_hour = hour_var.get()
             if not selected_hour:
                 return
-            minutes = sorted(set(os.path.basename(f)[10:12] for f in file_list if os.path.basename(f)[8:10] == selected_hour))
+            minutes = sorted(
+                set(os.path.basename(f)[10:12] for f in file_list if os.path.basename(f)[8:10] == selected_hour))
             if minute_menu:
                 minute_menu['menu'].delete(0, 'end')
                 for m in minutes:
@@ -1713,31 +1716,39 @@ def start_gui_browser(file_extension=".pol", do_not_fit=True):
 
         minute_var.set("Minute")
         minute_menu = tk.OptionMenu(time_frame, minute_var, "Minute")
-        minute_menu.grid(row=0, column=1, padx=(2, 5))
+        minute_menu.pack(side=tk.LEFT, padx=(2, 5))
+        minute_menu.config(bg="#48A6A7", fg="black", activebackground="#e6c200", activeforeground="black")
 
-        tk.Button(time_frame, text="Go To", command=goto_time).grid(row=0, column=2, padx=(5, 0))
-        time_frame.grid(row=0, column=3, padx=(10, 5), sticky="w")
+        go_btn = tk.Button(time_frame, text="Go To", command=goto_time)
+        go_btn.pack(side=tk.LEFT, padx=(5, 0))
+        go_btn.config(bg="#48A6A7", fg="black", activebackground="#e6c200", activeforeground="black")
+
+    # === Layout: 3 groups: Previous | [Middle Frame] | Next ===
+    control_frame.grid_columnconfigure(0, weight=0)
+    control_frame.grid_columnconfigure(1, weight=1)
+    control_frame.grid_columnconfigure(2, weight=0)
+    control_frame.grid_columnconfigure(3, weight=1)
+    control_frame.grid_columnconfigure(4, weight=0)
 
     prev_button = tk.Button(control_frame, text="Previous", command=prev_signal)
     next_button = tk.Button(control_frame, text="Next", command=next_signal)
+    prev_button.grid(row=0, column=0, padx=(10, 0), sticky="w")
+    next_button.grid(row=0, column=4, padx=(0, 10), sticky="e")
 
-    control_frame.grid_columnconfigure(0, weight=0)
-    control_frame.grid_columnconfigure(1, weight=0)
-    control_frame.grid_columnconfigure(2, weight=0)
-    control_frame.grid_columnconfigure(3, weight=0)
-    control_frame.grid_columnconfigure(4, weight=1)
-    control_frame.grid_columnconfigure(5, weight=0)
+    middle_frame = tk.Frame(control_frame)
+    middle_frame.grid(row=0, column=2)
 
-    prev_button.grid(row=0, column=0, sticky="w", padx=(0, 10))
-    tk.Button(control_frame, text="Select Folder", command=browse_folder).grid(row=0, column=1, padx=5, sticky="w")
-    calendar_frame.grid(row=0, column=2, padx=10, sticky="w")
-    time_frame.grid(row=0, column=3, padx=5, sticky="w")
-    next_button.grid(row=0, column=5, sticky="e", padx=(10, 0))
+    folder_button = tk.Button(middle_frame, text="Select Folder", command=browse_folder)
+    folder_button.pack(side=tk.LEFT, padx=5)
+
+    calendar_frame = tk.Frame(middle_frame)
+    calendar_frame.pack(side=tk.LEFT, padx=5)
+
+    time_frame = tk.Frame(middle_frame)
+    time_frame.pack(side=tk.LEFT, padx=5)
 
     prev_button.grid_remove()
     next_button.grid_remove()
-
-    import sys
 
     def on_close(r):
         r.destroy()
@@ -1745,7 +1756,6 @@ def start_gui_browser(file_extension=".pol", do_not_fit=True):
 
     root.protocol("WM_DELETE_WINDOW", lambda: on_close(root))
     root.mainloop()
-
 
 if __name__ == "__main__":
 
