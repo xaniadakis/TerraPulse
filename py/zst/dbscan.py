@@ -415,97 +415,140 @@ if not small_clusters.empty:
             print(f" - {ts}")
 
 
+if PLOT:
+    import numpy as np
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    import tkinter as tk
+    from tkinter import Entry, Button
+    from sklearn.manifold import TSNE
+    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-import tkinter as tk
-from tkinter import Entry, Button
-from sklearn.manifold import TSNE
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+    tsne = TSNE(n_components=2, perplexity=30, learning_rate=200, random_state=42)
+    tsne_transformed = tsne.fit_transform(df_pca.iloc[:, :-2])  # Exclude timestamp & cluster labels
 
-tsne = TSNE(n_components=2, perplexity=30, learning_rate=200, random_state=42)
-tsne_transformed = tsne.fit_transform(df_pca.iloc[:, :-2])  # Exclude timestamp & cluster labels
+    df_tsne = pd.DataFrame(tsne_transformed, columns=["tSNE1", "tSNE2"])
+    df_tsne["Cluster"] = df_pca["dbscan_cluster"]
+    df_tsne["Timestamp"] = df_pca["timestamp"].astype(str)  # Convert timestamps to string
 
-df_tsne = pd.DataFrame(tsne_transformed, columns=["tSNE1", "tSNE2"])
-df_tsne["Cluster"] = df_pca["dbscan_cluster"]
-df_tsne["Timestamp"] = df_pca["timestamp"].astype(str)  # Convert timestamps to string
+    # Create Tkinter window
+    root = tk.Tk()
+    root.title("t-SNE DBSCAN Clusters")
 
-# Create Tkinter window
-root = tk.Tk()
-root.title("t-SNE DBSCAN Clusters")
+    # Create Matplotlib figure and scatter plot
+    fig, ax = plt.subplots(figsize=(10, 7))
 
-# Create Matplotlib figure and scatter plot
-fig, ax = plt.subplots(figsize=(10, 7))
+    # Embed Matplotlib into Tkinter
+    canvas = FigureCanvasTkAgg(fig, master=root)
+    toolbar = NavigationToolbar2Tk(canvas, root)  # Enable Matplotlib toolbar for zooming/panning
+    toolbar.update()
+    canvas.get_tk_widget().pack()
 
-# Embed Matplotlib into Tkinter
-canvas = FigureCanvasTkAgg(fig, master=root)
-toolbar = NavigationToolbar2Tk(canvas, root)  # Enable Matplotlib toolbar for zooming/panning
-toolbar.update()
-canvas.get_tk_widget().pack()
-
-# Plot the scatter plot
-sns.scatterplot(
-    data=df_tsne, x="tSNE1", y="tSNE2", hue="Cluster",
-    palette="tab10", alpha=0.7, edgecolor="k", ax=ax
-)
-ax.set_title("t-SNE DBSCAN Clusters")
-plt.grid()
-plt.legend(title="Cluster")
-
-highlighted_point = None  # Store the highlighted point
-
-import subprocess
-def highlight_point(x, y, timestamp, cluster):
-    """Function to highlight a selected point."""
-    global highlighted_point
-    if highlighted_point:
-        highlighted_point.remove()
-
-    highlighted_point, = ax.plot(
-        x, y, 'o', markersize=10, markeredgecolor="yellow",
-        markerfacecolor="black", label="Selected Point"
+    # Plot the scatter plot
+    sns.scatterplot(
+        data=df_tsne, x="tSNE1", y="tSNE2", hue="Cluster",
+        palette="tab10", alpha=0.7, edgecolor="k", ax=ax
     )
+    ax.set_title("t-SNE DBSCAN Clusters")
+    plt.grid()
+    plt.legend(title="Cluster")
 
-    plt.legend()
-    canvas.draw()  # Update the Tkinter-embedded Matplotlib figure
-    print(f"🔹 Highlighted timestamp: {timestamp}, Cluster: {cluster}")
-    file_path = f"/home/vag/Documents/POLSKI_SAMPLES/{timestamp[:8]}/{timestamp}.pol"
-    subprocess.run(["python3", "py/signal_to_psd.py", "--file-path", file_path, "--no-fit"])
+    highlighted_point = None  # Store the highlighted point
 
-def on_click(event):
-    """Find and highlight the closest point when clicking on the plot."""
-    if event.inaxes is not None:
-        x_clicked, y_clicked = event.xdata, event.ydata
-        distances = np.sqrt((df_tsne["tSNE1"] - x_clicked) ** 2 + (df_tsne["tSNE2"] - y_clicked) ** 2)
-        closest_index = distances.idxmin()
-        timestamp = df_tsne.loc[closest_index, "Timestamp"]
-        cluster = df_tsne.loc[closest_index, "Cluster"]
-        highlight_point(df_tsne.loc[closest_index, "tSNE1"], df_tsne.loc[closest_index, "tSNE2"], timestamp, cluster)
+    import subprocess
+    def highlight_point(x, y, timestamp, cluster):
+        """Function to highlight a selected point."""
+        global highlighted_point
+        if highlighted_point:
+            highlighted_point.remove()
 
-def highlight_timestamp():
-    """Search for a timestamp and highlight its corresponding point."""
-    timestamp = search_entry.get()
-    match = df_tsne[df_tsne["Timestamp"] == timestamp]
-    if not match.empty:
-        highlight_point(match["tSNE1"].values[0], match["tSNE2"].values[0], timestamp, match["Cluster"].values[0])
-    else:
-        print("❌ Timestamp not found.")
+        highlighted_point, = ax.plot(
+            x, y, 'o', markersize=10, markeredgecolor="yellow",
+            markerfacecolor="black", label="Selected Point"
+        )
 
-# Search box and button
-search_entry = Entry(root, width=20)
-search_entry.pack()
-search_button = Button(root, text="Search", command=highlight_timestamp)
-search_button.pack()
+        plt.legend()
+        canvas.draw()  # Update the Tkinter-embedded Matplotlib figure
+        print(f"🔹 Highlighted timestamp: {timestamp}, Cluster: {cluster}")
+        file_path = f"/home/vag/Documents/POLSKI_SAMPLES/{timestamp[:8]}/{timestamp}.pol"
+        subprocess.run(["python3", "py/signal_to_psd.py", "--file-path", file_path, "--no-fit"])
 
-# Connect Matplotlib click event to highlight points
-canvas.mpl_connect("button_press_event", on_click)
+    def on_click(event):
+        """Find and highlight the closest point when clicking on the plot."""
+        if event.inaxes is not None:
+            x_clicked, y_clicked = event.xdata, event.ydata
+            distances = np.sqrt((df_tsne["tSNE1"] - x_clicked) ** 2 + (df_tsne["tSNE2"] - y_clicked) ** 2)
+            closest_index = distances.idxmin()
+            timestamp = df_tsne.loc[closest_index, "Timestamp"]
+            cluster = df_tsne.loc[closest_index, "Cluster"]
+            highlight_point(df_tsne.loc[closest_index, "tSNE1"], df_tsne.loc[closest_index, "tSNE2"], timestamp, cluster)
 
-# Show Tkinter window
-root.mainloop()
+    def highlight_timestamp():
+        """Search for a timestamp and highlight its corresponding point."""
+        timestamp = search_entry.get()
+        match = df_tsne[df_tsne["Timestamp"] == timestamp]
+        if not match.empty:
+            highlight_point(match["tSNE1"].values[0], match["tSNE2"].values[0], timestamp, match["Cluster"].values[0])
+        else:
+            print("❌ Timestamp not found.")
+
+    # Search box and button
+    search_entry = Entry(root, width=20)
+    search_entry.pack()
+    search_button = Button(root, text="Search", command=highlight_timestamp)
+    search_button.pack()
+
+    # Connect Matplotlib click event to highlight points
+    canvas.mpl_connect("button_press_event", on_click)
+
+    # Show Tkinter window
+    root.mainloop()
 
 # Save cluster assignments to CSV
 cluster_file = os.path.join(DATA_DIR, "dbscan_clusters.csv")
 df_pca.to_csv(cluster_file, index=False)
 print(f"✅ Cluster assignments saved at: {cluster_file}")
+
+##########################################################################3
+# --- Earthquake precursor analysis per cluster ---
+LABEL_WINDOW_HOURS = 72
+label_window = pd.Timedelta(hours=LABEL_WINDOW_HOURS)
+
+# Load earthquake timestamps
+eq_path = os.path.join(os.getcwd(), "earthquakes_db/output/dobrowolsky_parnon.csv")
+eq_df = pd.read_csv(eq_path)
+eq_df["DATETIME"] = pd.to_datetime(eq_df["DATETIME"], errors="coerce")
+eq_df = eq_df.dropna(subset=["DATETIME"])
+eq_df["timestamp"] = eq_df["DATETIME"]  # keep in datetime format
+
+# Convert PSD timestamps
+df_pca["timestamp"] = pd.to_datetime(df_pca["timestamp"])
+df_pca = df_pca.sort_values("timestamp").reset_index(drop=True)
+
+# --- Mark precursor points ---
+precursor_mask = pd.Series(False, index=df_pca.index)
+
+for eq_time in eq_df["timestamp"]:
+    in_window = (df_pca["timestamp"] >= eq_time - label_window) & (df_pca["timestamp"] < eq_time)
+    precursor_mask |= in_window
+
+df_pca["is_precursor"] = precursor_mask
+total_precursors = precursor_mask.sum()
+
+# --- Analyze cluster-wise precursor distributions ---
+print("\n📊 Earthquake Precursor Stats by GMM Cluster:")
+print(f"Total precursor timestamps: {total_precursors}\n")
+
+for cluster_id in sorted(df_pca["dbscan_cluster"].unique()):
+    cluster_df = df_pca[df_pca["dbscan_cluster"] == cluster_id]
+    n_total = len(cluster_df)
+    n_precursor = cluster_df["is_precursor"].sum()
+
+    pct_of_all_precursors = (n_precursor / total_precursors * 100) if total_precursors else 0
+    pct_of_cluster = (n_precursor / n_total * 100) if n_total else 0
+
+    print(f"Cluster {cluster_id}:")
+    print(f"  - {n_precursor} precursor timestamps")
+    print(f"  - {pct_of_all_precursors:.2f}% of all precursors")
+    print(f"  - {pct_of_cluster:.2f}% of this cluster\n")

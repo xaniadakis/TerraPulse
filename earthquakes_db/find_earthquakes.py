@@ -4,7 +4,7 @@ from geopy.distance import geodesic
 import pandas as pd
 from tqdm import tqdm
 
-SOUTH = True
+LOCATION = "SANTORINI"
 output_dir = "/mnt/c/Users/shumann/Documents/GaioPulse/earthquakes_db/output"
 output_dir = "/home/vag/PycharmProjects/TerraPulse/earthquakes_db/output"
 
@@ -44,10 +44,16 @@ combined_df['DEPTH'] = pd.to_numeric(combined_df['DEPTH'], errors='coerce')
 # Define Parnon location
 parnon_location = (37.2609, 22.5847)
 kalpaki_location = (39.9126, 20.5888)
-if SOUTH:
+santorini_location = (36.395675, 25.446722)
+if LOCATION == "PARNON":
     coil_location = parnon_location
-else:
+elif LOCATION == "KALPAKI":
     coil_location = kalpaki_location
+elif LOCATION == "SANTORINI":
+    coil_location = santorini_location
+else:
+    print(f"Can't run for unknown location: {LOCATION}")
+    exit(1)
 
 # Calculate distance for each row
 def calculate_distance(row):
@@ -104,15 +110,6 @@ dobrowolsky_df = dobrowolsky_df.sort_values(by='DATETIME', ascending=True).reset
 # Insert new ID
 dobrowolsky_df.insert(0, 'ID', range(1, len(dobrowolsky_df) + 1))
 
-
-# dobrowolsky_df["DATE"] = pd.to_datetime(dobrowolsky_df["DATE"])
-# # Parse TIME as a timedelta (hours, minutes, seconds)
-# dobrowolsky_df["TIME"] = pd.to_timedelta(dobrowolsky_df["TIME"].str.replace(' ', ':'))
-# # Add TIME as timedelta to DATE to create DATETIME
-# dobrowolsky_df["DATETIME"] = dobrowolsky_df["DATE"] + dobrowolsky_df["TIME"]
-# # Drop the DATE, TIME columns
-# dobrowolsky_df.drop(columns=["DATE", "TIME"], inplace=True)
-# Move the DATETIME column to the second position
 cols = list(dobrowolsky_df.columns)
 cols.insert(1, cols.pop(cols.index("DATETIME")))  # Move DATETIME to the second position
 dobrowolsky_df = dobrowolsky_df[cols]
@@ -122,10 +119,7 @@ print("Sorting Dobrowolsky-valid rows by date...")
 dobrowolsky_df = dobrowolsky_df.sort_values(by='DATETIME', ascending=True)
 
 # Save the filtered DataFrame to a new CSV file
-if SOUTH:
-    filename = "dobrowolsky_parnon.csv"
-else:
-    filename = "dobrowolsky_kalpaki.csv"
+filename = f"dobrowolsky_{LOCATION.lower()}.csv"
 
 dobrowolsky_csv = os.path.join(output_dir, filename)
 dobrowolsky_df.to_csv(dobrowolsky_csv, index=False)
