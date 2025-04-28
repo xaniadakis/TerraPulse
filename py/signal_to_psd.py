@@ -19,15 +19,19 @@ import os
 import pandas as pd
 from pathlib import Path
 import mplcursors  # Add this library for interactivity
-
 import logging
-
+import sys
+import os
+import numpy as np
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from srd.read_srd import read_srd_file, decimate_signal
+from read_dat import ELA11C_ADCread
 
 NUM_HARMONICS = 7  # Define the number of harmonics expected
 FMIN = 3
 FMAX = 48
-DOWNSAMLPING_FACTOR = 30
-SAMPLING_RATE = 5e6 / 128 / 13 / DOWNSAMLPING_FACTOR
+DOWNSAMPLING_FACTOR = 30
+SAMPLING_RATE = 5e6 / 128 / 13 / DOWNSAMPLING_FACTOR
 INPUT_DIRECTORY = ''
 FILE_TYPE = ''
 WORKED = 0
@@ -39,6 +43,13 @@ error_files = []
 fit_data = {'timestamp': [], 'NS_fit': [], 'EW_fit': []}
 zero_fit_count = {'NS': 0, 'EW': 0}  # Counter for zero fits
 output_means_file = INPUT_DIRECTORY+"/mean_fit_values.txt"  # Specify the output file path
+
+import numpy as np
+
+def downsample_signal(input_signal, downsampling_factor):
+    trimmed_length = (len(input_signal) // downsampling_factor) * downsampling_factor
+    input_signal = input_signal[:trimmed_length]
+    return input_signal.reshape(-1, downsampling_factor).mean(axis=1)
 
 def get_equalizer(freqs, date):
     # Define important dates
@@ -1136,10 +1147,50 @@ def sr_fit(f, p_in, modes, signal_filename, component, smoothen=False):
 #         # plot_signal_on_fit_error(f, p_in, signal_filename, component, message="Unexpected error during fit.")
 #         return None, None, None, 0.0
 
+
 def validate_file_type(file_type):
-    if file_type not in ['.pol', '.hel']:
-        raise ValueError("Invalid file type. Only '.pol' and '.hel' are supported.")
+    if file_type not in ['.pol', '.hel', '.dat', '.srd']:
+        raise ValueError("Invalid file type. Only '.pol', '.hel', '.dat', and '.srd' are supported.")
     return file_type
+
+
+
+def calibrate_HYL(Bx, By, date_string):
+    """
+    Calibrates raw ADC data to physical units (pT) depending on the date.
+    
+    Args:
+        Bx (np.ndarray): Array of raw Bx samples.
+        By (np.ndarray): Array of raw By samples.
+        date_string (str): Date in 'YYYYMMDD' format, e.g., '20210924'.
+    
+    Returns:
+        np.ndarray, np.ndarray: Calibrated Bx and By arrays.
+    """
+    date_int = int(date_string)
+    
+    if date_int < 20210629:
+        a1_mVnT = 90.3
+        a2_mVnT = 90.4
+    elif date_int < 20231211:
+        a1_mVnT = 57.8
+        a2_mVnT = 57.9
+    else:
+        a1_mVnT = 55.0
+        a2_mVnT = 55.0
+
+    a1 = a1_mVnT * 1e-3 / 1e3
+    a2 = a2_mVnT * 1e-3 / 1e3
+    ku = 4.26
+    c1 = a1 * ku
+    c2 = a2 * ku
+    d = 2**18
+    V = 4.096 * 2
+
+    scale1 = c1 * d / V
+    scale2 = c2 * d / V
+
+    return -Bx / scale1, -By / scale2
 
 def get_file_size(file_path):
     file_size_bytes = os.path.getsize(file_path)
@@ -1170,34 +1221,57 @@ def read_signals(file_path):
 def transform_signal(input_filename, file_extension, do_plot=False, do_not_fit=False, gui=False):
     global WORKED, fit_data
     try:
-        # Load data from the file
-        data = np.loadtxt(input_filename+file_extension, delimiter='\t')
         # Extract filename and parse date-time information
         base_filename = os.path.basename(input_filename)
         date_time_str = os.path.splitext(base_filename)[0]
-        file_origin = "Hellenic" if file_extension == '.hel' else "Polski" if file_extension == '.pol' else "Unknown"
+        if file_extension.lower() in ('.hel', '.srd'):
+            file_origin = "Hellenic"
+        elif file_extension.lower() in ('.pol', '.dat'):
+            file_origin = "Polski"
+        else:
+            file_origin = "Unknown"
+
+        # Load data from the file
+        srd_date = None
+        if file_extension == '.dat':
+            HNS_raw, HEW_raw, nr, tini = ELA11C_ADCread(input_filename + file_extension)
+            HNS, HEW = calibrate_HYL(HNS_raw, HEW_raw, date_time_str)
+            HNS = downsample_signal(HNS, DOWNSAMPLING_FACTOR)
+            HEW = downsample_signal(HEW, DOWNSAMPLING_FACTOR)
+        elif file_extension.lower() == '.srd':
+            srd_date, fs, x, y = read_srd_file(input_filename + file_extension)
+            # Determine per-channel sample count
+
+            downsampling_factor = int(fs / 100)
+            print(f"Downsmapling factor: {downsampling_factor}")
+            # downsampling_factor = 24
+            HNS, HEW = decimate_signal(x, y, downsampling_factor)
+            global SAMPLING_RATE
+            SAMPLING_RATE = fs / downsampling_factor
+        else:
+            data = np.loadtxt(input_filename + file_extension, delimiter='\t')
+            if data.ndim == 1:
+                HNS = data
+                HEW = None
+            elif data.ndim == 2:
+                HNS = data[:, 0]
+                HEW = data[:, 1] if data.shape[1] > 1 else None
+            else:
+                raise ValueError(f"Unexpected file format: data has invalid dimensions {data.ndim}.")
 
         try:
             if file_origin == "Hellenic":
-                file_datetime = datetime.datetime.strptime(date_time_str, "%Y%m%d%H%M%S")
-                formatted_datetime = file_datetime.strftime("%Y-%m-%d %H:%M:%S")
+                if file_extension.lower() == '.srd':
+                    file_datetime = datetime.datetime.fromtimestamp(srd_date)
+                    formatted_datetime = file_datetime.strftime("%Y-%m-%d %H:%M:%S")
+                else:
+                    file_datetime = datetime.datetime.strptime(date_time_str, "%Y%m%d%H%M%S")
+                    formatted_datetime = file_datetime.strftime("%Y-%m-%d %H:%M:%S")
             else:
                 file_datetime = datetime.datetime.strptime(date_time_str, "%Y%m%d%H%M")
                 formatted_datetime = file_datetime.strftime("%Y-%m-%d %H:%M")
         except ValueError:
             formatted_datetime = "Unknown Date-Time"
-
-        # Determine if the file has a single column or multiple columns
-        if data.ndim == 1:  # Single-column data
-            # print("Detected single-column data.")
-            HNS = data  # Treat the single column as HNS
-            HEW = None  # No second channel
-        elif data.ndim == 2:  # Multi-column data
-            # print("Detected multi-column data.")
-            HNS = data[:, 0]
-            HEW = data[:, 1] if data.shape[1] > 1 else None
-        else:
-            raise ValueError(f"Unexpected file format: data has invalid dimensions {data.ndim}.")
 
         # Time-domain plotting
         if do_plot:
@@ -1211,7 +1285,8 @@ def transform_signal(input_filename, file_extension, do_plot=False, do_not_fit=F
             plt.ylabel("B [pT]")
             plt.xlabel("Time [sec]")
             plt.xticks(np.arange(0, timespace[-1], step=30))
-            plt.xlim([0,300])
+            duration_limit = 300 if file_origin == "Polski" else 600
+            plt.xlim([0, duration_limit])
             plt.grid(ls=':')
             plt.legend()
 
@@ -1648,7 +1723,8 @@ def start_gui_browser(file_extension=".pol", do_not_fit=True):
                 return
             months = sorted(set(dt.month for dt in available_dates if str(dt.year) == selected_year))
             if month_menu:
-                month_menu['menu'].delete(0, 'end')
+                if month_menu and month_menu['menu']:
+                    month_menu['menu'].delete(0, 'end')
                 for m in months:
                     month_menu['menu'].add_command(label=str(m).zfill(2), command=tk._setit(month_var, str(m).zfill(2)))
                 month_var.set('')
@@ -1773,8 +1849,8 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "-t", "--file-type", 
-        choices=['pol', 'hel'], 
-        help="Specify the file type to process. Only 'pol' or 'hel' are allowed."
+        choices=['pol', 'hel', 'dat', 'srd'], 
+        help="Specify the file type to process. Only 'pol', 'hel', 'srd' or 'dat' are allowed."
     )
     parser.add_argument(
         "-d", "--input-directory", 
@@ -1831,7 +1907,7 @@ if __name__ == "__main__":
         exit(0)
     elif args.file_select:
         # File selection mode
-        print(f"Please select the singal you want to plot.")
+        print(f"Please select the signal you want to plot.")
         select_file_and_transform()
         exit(0)
     else:
