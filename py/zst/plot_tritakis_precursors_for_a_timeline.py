@@ -85,7 +85,7 @@ def process_zst_directory(root_dir, from_date, to_date):
 
 def plot_ratio_timeline(df):
     df = df.sort_values("timestamp")
-    plt.figure(figsize=(12, 5))
+    plt.figure(figsize=(14, 10))
     df = df.copy()
     df["highlight"] = df["max_20_30_ratio"] > 2
     df["size"] = df["highlight"].map({True: 30, False: 10})
@@ -105,14 +105,16 @@ def plot_ratio_timeline(df):
     above_threshold = df[df["highlight"]]  # Select only points with ratio > 2
 
     for _, row in above_threshold.iterrows():
-        plt.text(
-            x=row["timestamp"],  # X position of the label (time of the point)
-            y=row["max_20_30_ratio"],  # Y position of the label (ratio value)
-            s=row["timestamp"].strftime("%d/%m %H:%M"),  # Text label: formatted timestamp
-            fontsize=9,  # Size of the label text
-            rotation=-30,  # No rotation
-            horizontalalignment='left',  # Align text to the left of the X position
-            verticalalignment='top'  # Align text above the Y position
+        plt.annotate(
+            text=row["timestamp"].strftime("%d/%m %H:%M"),  # Label
+            xy=(row["timestamp"], row["max_20_30_ratio"]),  # Anchor point
+            xytext=(2, 0),  # Offset (in points)
+            textcoords="offset points",
+            fontsize=8,
+            rotation=-30,
+            ha='left',
+            va='top',
+            clip_on=True  # 🔧 Prevents expanding the plot limits
         )
 
     plt.yscale("log")
@@ -123,8 +125,8 @@ def plot_ratio_timeline(df):
     plt.grid(True, which="both", axis="y", linestyle='--', linewidth=0.5, color='gray')
 
     # Define y-ticks across log and linear range
-    y_ticks = [0.1, 1, 2, 4, 6, 8, 10]
-    y_labels = [r'$10^{-1}$', r'$10^0$', '2', '4', '6', '8','10']
+    y_ticks = [0.1, 1, 2, 5, 10, 15, 20]
+    y_labels = [r'$10^{-1}$', r'$10^0$', '2', '5','10', '15', '20']
     plt.yticks(y_ticks, y_labels)
 
     # X-ticks and vertical lines
@@ -149,14 +151,57 @@ def load_earthquake_timestamps(file_path):
     df = pd.read_csv(file_path, parse_dates=["DATETIME"])
     return df["DATETIME"].tolist()
 
+def get_dobrowolsky_timestamps(location="PARNON", tolerance_factor=3):
+    from math import sqrt
+    from geopy.distance import geodesic
+
+    base_dir = Path(__file__).resolve().parent.parent.parent
+    output_dir = base_dir / "earthquakes_db" / "output"
+    
+    csv_files = [f for f in output_dir.glob("*.csv") if f.name[0].isdigit()]
+    all_data = [pd.read_csv(f) for f in csv_files]
+    df = pd.concat(all_data, ignore_index=True)
+
+    df.rename(columns={c: c.split('(')[0].strip().replace('.', '') for c in df.columns}, inplace=True)
+    df['LAT'] = pd.to_numeric(df['LAT'], errors='coerce')
+    df['LONG'] = pd.to_numeric(df['LONG'], errors='coerce')
+    df['DEPTH'] = pd.to_numeric(df['DEPTH'], errors='coerce')
+
+    locations = {
+        "PARNON": (37.2609, 22.5847),
+        "KALPAKI": (39.9126, 20.5888),
+        "SANTORINI": (36.395675, 25.446722),
+        "GREECE": (37.2609, 22.5847),
+    }
+    coil_location = locations.get(location.upper())
+    if not coil_location:
+        raise ValueError(f"Unknown location: {location}")
+
+    def compute_distance(row):
+        surface = geodesic(coil_location, (row['LAT'], row['LONG'])).km
+        return sqrt(surface**2 + row['DEPTH']**2) if not pd.isna(row['DEPTH']) else surface
+
+    df['PARNON_DISTANCE'] = df.apply(compute_distance, axis=1)
+    df['PREPARATION_RADIUS'] = 10 ** (0.43 * df['MAGNITUDE'])
+    df['DOBROWOLSKY'] = df['PARNON_DISTANCE'] <= (df['PREPARATION_RADIUS'] * (1 + tolerance_factor))
+
+    # Clean time
+    df["DATE"] = pd.to_datetime(df["DATE"], errors="coerce")
+    df["TIME"] = pd.to_timedelta(df["TIME"].str.replace(" ", ":"), errors="coerce")
+    df["DATETIME"] = df["DATE"] + df["TIME"]
+
+    return df[df["DOBROWOLSKY"] == True]["DATETIME"].dropna().tolist()
 
 # Example usage:
 # df = process_zst_directory("/mnt/e/POLSKI_DB", "2024-12-01", "2025-04-01")
 df = process_zst_directory("/mnt/e/POLSKI_DB", "2024-07-01",  "2024-12-01")
 
-from pathlib import Path
+# from pathlib import Path
 
-base_dir = Path(__file__).resolve().parent.parent.parent
-quake_file = base_dir / "earthquakes_db" / "output" /"dobrowolsky_parnon.csv"
-quake_times = load_earthquake_timestamps(quake_file)
+# base_dir = Path(__file__).resolve().parent.parent.parent
+# quake_file = base_dir / "earthquakes_db" / "output" /"dobrowolsky_parnon.csv"
+# quake_times = load_earthquake_timestamps(quake_file)
+
+quake_times = get_dobrowolsky_timestamps(location="PARNON", tolerance_factor=0.5)
+
 plot_ratio_timeline(df)

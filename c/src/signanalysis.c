@@ -30,7 +30,7 @@ void compute_psd(double *signal, int length, double *frequencies, double *psd, c
     // Open the output file for writing
     FILE *f = fopen(output_file, "w");
     if (!f) {
-        printf("compute_psd: File opening failed");
+        // LOG("compute_psd: File opening failed");
         perror("compute_psd: File opening failed");
         return;
     }
@@ -73,7 +73,7 @@ Harmonic* analyze_schumann_harmonics(double *signal, int length, double sampling
     Harmonic *harmonics = (Harmonic *) malloc(sizeof(Harmonic) * NUM_HARMONICS);
 
     if (!out || !in || !psd || !harmonics) {
-        printf("Memory allocation failed!\n");
+        // LOG("Memory allocation failed!\n");
         fprintf(stderr, "Memory allocation failed!\n");
         fftw_free(out);
         fftw_free(in);
@@ -125,7 +125,7 @@ void find_modes(double *signal, int length, double sampling_frequency, double mi
     double *psd = (double *) malloc(sizeof(double) * (length / 2 + 1));
 
     if (!out || !in || !psd) {
-        printf("Memory allocation failed!\n");
+        // LOG("Memory allocation failed!\n");
         fprintf(stderr, "Memory allocation failed!\n");
         fftw_free(out);
         fftw_free(in);
@@ -148,7 +148,7 @@ void find_modes(double *signal, int length, double sampling_frequency, double mi
     double *modes_amplitude = (double *) malloc(num_modes * sizeof(double));
 
     if (!modes_frequency || !modes_amplitude) {
-        printf("Memory allocation failed!\n");
+        // LOG("Memory allocation failed!\n");
         fprintf(stderr, "Memory allocation failed!\n");
         fftw_destroy_plan(plan);
         fftw_free(out);
@@ -212,7 +212,7 @@ void downsample_srd_signal(SrdData data, int downsample_factor, const char *file
 
     FILE *file = fopen(filename, "w");
     if (file == NULL) {
-        printf("Failed to open file \"%s\" for writing\n", filename);
+        // LOG("Failed to open file \"%s\" for writing\n", filename);
         fprintf(stderr, "Failed to open file \"%s\" for writing\n", filename);
         return;
     }
@@ -225,7 +225,7 @@ void downsample_srd_signal(SrdData data, int downsample_factor, const char *file
             for (int j = 0; j < downsample_factor; j++) {
                 int idx = i * downsample_factor + j;
                 if (idx >= samples_per_channel) {
-                    printf("1CH: Index out of bounds: %d\n", idx);
+                    // LOG("1CH: Index out of bounds: %d\n", idx);
                     fprintf(stderr, "1CH: Index out of bounds: %d\n", idx);
                     fclose(file);
                     return;
@@ -249,7 +249,7 @@ void downsample_srd_signal(SrdData data, int downsample_factor, const char *file
             for (int j = 0; j < downsample_factor; j++) {
                 int idx = i * downsample_factor + j;
                 if (idx >= samples_per_channel) {
-                    printf("2CH: Index out of bounds: %d\n", idx);
+                    // LOG("2CH: Index out of bounds: %d\n", idx);
                     fprintf(stderr, "2CH: Index out of bounds: %d\n", idx);
                     fclose(file);
                     return;

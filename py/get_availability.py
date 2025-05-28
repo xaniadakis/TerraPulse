@@ -562,15 +562,15 @@ class FileSelectorApp(QWidget):
         #         print(f"Period {i + 1} to {i + 2}: {time_difference}")
 
         # Print first and last item of each continuous period
-        print("\nContinuous Periods Summary:")
-        for i, period in enumerate(continuous_periods, 1):
-            if period[0]:
-                first_item = period[0][0]
-                last_item = period[0][-1]
-                print(f"Period {i}:")
-                print(f"  First item: {first_item}")
-                print(f"  Last item: {last_item}")
-                print(f"  Number of files in period: {len(period[0])}\n")
+        # print("\nContinuous Periods Summary:")
+        # for i, period in enumerate(continuous_periods, 1):
+        #     if period[0]:
+        #         first_item = period[0][0]
+        #         last_item = period[0][-1]
+        #         print(f"Period {i}:")
+        #         print(f"  First item: {first_item}")
+        #         print(f"  Last item: {last_item}")
+        #         print(f"  Number of files in period: {len(period[0])}\n")
 
 
         return continuous_periods, counter
@@ -578,15 +578,15 @@ class FileSelectorApp(QWidget):
     def prepare_dobrowolsky_df(self):
         print(f"Shall get earthquakes for {self.selected_region} location!")
         output_dir = "./earthquakes_db/output"#"/mnt/c/Users/shumann/Documents/GaioPulse/earthquakes_db/output"
-        file_path = os.path.join(output_dir, f"dobrowolsky_{self.selected_region}.csv")
+        file_path = os.path.join(output_dir, f"dobrowolsky_parnon.csv")
 
         # Check if file does not exist
         if os.path.exists(file_path):
-            # print(f"The file '{file_path}' exists.")
+            print(f"The file '{file_path}' exists.")
             dobrowolsky_df = pd.read_csv(file_path)
             return dobrowolsky_df.drop(columns=['DOBROWOLSKY'])
         else:
-            # print(f"The file '{file_path}' does not exist. Will generate it.")
+            print(f"The file '{file_path}' does not exist. Will generate it.")
 
             # Boolean constant to decide the distance calculation method
             USE_HYPOTENUSE = True
@@ -624,11 +624,13 @@ class FileSelectorApp(QWidget):
             # Define Parnon location
             parnon_location = (37.2609, 22.5847)
             kalpaki_location = (39.9126, 20.5888)
-
+            distance_column_name = None
             if self.selected_region == "parnon":
                 coil_location = parnon_location
+                distance_column_name = "PARNON_DISTANCE"
             elif self.selected_region == "kalpaki":
                 coil_location = kalpaki_location
+                distance_column_name = "KALPAKI_DISTANCE"
 
             # Calculate distance for each row
             def calculate_distance(row):
@@ -642,7 +644,7 @@ class FileSelectorApp(QWidget):
                 return None
 
             print(f"Calculating {'hypotenuse' if USE_HYPOTENUSE else 'surface'} distances to Parnon...")
-            combined_df['COIL_DISTANCE'] = list(
+            combined_df[distance_column_name] = list(
                 tqdm(combined_df.apply(calculate_distance, axis=1), desc="Calculating Distances", total=len(combined_df))
             )
 
@@ -650,7 +652,7 @@ class FileSelectorApp(QWidget):
             combined_df['PREPARATION_RADIUS'] = 10**(0.43 * combined_df['MAGNITUDE'])
 
             # Round distances and preparation radius to 2 decimal places
-            combined_df['COIL_DISTANCE'] = combined_df['COIL_DISTANCE'].round(2)
+            combined_df[distance_column_name] = combined_df[distance_column_name].round(2)
             combined_df['PREPARATION_RADIUS'] = combined_df['PREPARATION_RADIUS'].round(2)
 
             # Apply the Dobrowolsky law with tolerance
@@ -659,7 +661,7 @@ class FileSelectorApp(QWidget):
                 tolerance = row['PREPARATION_RADIUS'] * DOBROWOLSKY_TOLERANCE_FACTOR
                 effective_radius = row['PREPARATION_RADIUS'] + tolerance
                 # Check if the distance is less than or equal to the preparation radius with tolerance
-                if row['COIL_DISTANCE'] <= effective_radius:
+                if row[distance_column_name] <= effective_radius:
                     return 1
                 return 0
 
@@ -815,9 +817,10 @@ class FileSelectorApp(QWidget):
     def plot_timeline(self, continuous_periods, total_start, total_end, num_files, interval_minutes=5, start_time=None):
 
         self.plot_availability_histogram(continuous_periods)
+        dobrowolsky_df = None
         dobrowolsky_df = self.prepare_dobrowolsky_df()
 
-        # dobrowolsky_df = pd.read_csv('/mnt/c/Users/shumann/Documents/GaioPulse/earthquakes_db/output/dobrowolsky_valid_rows.csv')
+        # dobrowolsky_df = pd.read_csv('/mnt/c/Users/shumann/Documents/GaioPulse/earthquakes_db/output/dobrowolsky_kalpaki.csv')
 
         earthquakes_by_year = None
         if dobrowolsky_df is not None:
@@ -858,8 +861,9 @@ class FileSelectorApp(QWidget):
         sorted_years = sorted(periods_by_year.keys())
         num_years = len(sorted_years)
 
+        val = 2 if dobrowolsky_df is not None else 1
         # Dynamically adjust the figure height for compactness but ensure it's large enough for visibility
-        fig_height = min(2 * num_years, 10)  # Cap the total height to a reasonable desktop size
+        fig_height = min(val * num_years, 10)  # Cap the total height to a reasonable desktop size
         fig, axes = plt.subplots(num_years, 1, figsize=(15, fig_height))  # No sharex=True
 
         # If there is only one year, make sure axes is still iterable
@@ -886,8 +890,8 @@ class FileSelectorApp(QWidget):
                 # print(f"Year {year} has {len(year_periods)} periods")
                 for period in year_periods:
                     try:
-                        print(f"################################")
-                        print(f"###YP: {period[0][0]}")
+                        # print(f"################################")
+                        # print(f"###YP: {period[0][0]}")
                         # Extract and validate the start timestamp
                         start_str = period[0][0].split(os.sep)[-1].split('.')[0][:12]
                         start = datetime.strptime(start_str, "%Y%m%d%H%M")
@@ -896,14 +900,14 @@ class FileSelectorApp(QWidget):
                         # Extract and validate the end timestamp
                         end_str = period[0][-1].split(os.sep)[-1].split('.')[0][:12]
                         end = datetime.strptime(end_str, "%Y%m%d%H%M") + timedelta(minutes=interval_minutes)
-                        print(f"###end: {end}")
+                        # print(f"###end: {end}")
 
-                        print(f"PERIOD00: {period[0][0]}")
-                        print(f"PERIOD0-1: {period[0][1]}")
-                        print(f"PERIOD0-2: {period[0][-2]}")
-                        print(f"PERIOD0-1: {period[0][-1]}")
-                        print(f"PERIOD LEN: {len(period[0])}")
-                        print(f"################################")
+                        # print(f"PERIOD00: {period[0][0]}")
+                        # print(f"PERIOD0-1: {period[0][1]}")
+                        # print(f"PERIOD0-2: {period[0][-2]}")
+                        # print(f"PERIOD0-1: {period[0][-1]}")
+                        # print(f"PERIOD LEN: {len(period[0])}")
+                        # print(f"################################")
                         # Retrieve the path for this period
                         # directory_path = os.path.dirname(period[2])
                         # print(f"dir: {directory_path}")
@@ -963,11 +967,16 @@ class FileSelectorApp(QWidget):
             #             line_eq, = ax.plot([], [], color='orange', label='Earthquake')  # For legend
             # Plot earthquake occurrences for the year as arrows
             # Plot earthquake occurrences for the year as arrows
-            min_magnitude = dobrowolsky_df['MAGNITUDE'].min()
-            max_magnitude = dobrowolsky_df['MAGNITUDE'].max()
+            if self.selected_region == "parnon":
+                distance_column_name = "PARNON_DISTANCE"
+            elif self.selected_region == "kalpaki":
+                distance_column_name = "KALPAKI_DISTANCE"
+            if dobrowolsky_df is not None:
+                min_magnitude = dobrowolsky_df['MAGNITUDE'].min()
+                max_magnitude = dobrowolsky_df['MAGNITUDE'].max()
 
-            min_coil_distance = dobrowolsky_df['COIL_DISTANCE'].min()
-            max_coil_distance = dobrowolsky_df['COIL_DISTANCE'].max()
+                min_coil_distance = dobrowolsky_df[distance_column_name].min()
+                max_coil_distance = dobrowolsky_df[distance_column_name].max()
 
             if earthquakes_by_year is not None:
                 if year in earthquakes_by_year.groups:
@@ -976,7 +985,7 @@ class FileSelectorApp(QWidget):
                         quake_date = row['DATETIME']
                         magnitude = row['MAGNITUDE']
                         quake_id = row['ID']  # Assuming the DataFrame has an 'ID' column
-                        coil_distance = row['COIL_DISTANCE']
+                        coil_distance = row[distance_column_name]
                         preparation_radius = row['PREPARATION_RADIUS']
                         depth = row['DEPTH']
                         

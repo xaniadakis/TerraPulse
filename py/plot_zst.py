@@ -21,8 +21,8 @@ if __name__ == "__main__":
 
     # Timing the loading process
     start_time = time.time()
-    input_directory = "../output/"
-    base_filename = input_directory + "20211022"
+    input_directory = "/mnt/e/testing_sth/"
+    base_filename = input_directory + "20211018"
 
     # Generate file names in the format HHMM from 0000 to 2355 in 5-minute increments
     files = []
