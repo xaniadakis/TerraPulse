@@ -154,10 +154,22 @@ def load_earthquake_timestamps(file_path):
 def get_dobrowolsky_timestamps(location="PARNON", tolerance_factor=3):
     from math import sqrt
     from geopy.distance import geodesic
+    import geopandas as gpd
+    from shapely.geometry import Point
 
     base_dir = Path(__file__).resolve().parent.parent.parent
     output_dir = base_dir / "earthquakes_db" / "output"
-    
+    shapefile_path = base_dir / "earthquakes_db" / "shapely" / "ne_110m_admin_0_countries.shp"
+
+    # Load country polygons
+    land = gpd.read_file(shapefile_path)
+
+    # Function to check if a point is on land
+    def is_on_land(lat, lon):
+        point = Point(lon, lat)
+        return land.contains(point).any()
+
+    # Load and prepare earthquake data
     csv_files = [f for f in output_dir.glob("*.csv") if f.name[0].isdigit()]
     all_data = [pd.read_csv(f) for f in csv_files]
     df = pd.concat(all_data, ignore_index=True)
@@ -167,6 +179,7 @@ def get_dobrowolsky_timestamps(location="PARNON", tolerance_factor=3):
     df['LONG'] = pd.to_numeric(df['LONG'], errors='coerce')
     df['DEPTH'] = pd.to_numeric(df['DEPTH'], errors='coerce')
 
+    # Coil location mapping
     locations = {
         "PARNON": (37.2609, 22.5847),
         "KALPAKI": (39.9126, 20.5888),
@@ -177,6 +190,7 @@ def get_dobrowolsky_timestamps(location="PARNON", tolerance_factor=3):
     if not coil_location:
         raise ValueError(f"Unknown location: {location}")
 
+    # Distance and Dobrowolsky
     def compute_distance(row):
         surface = geodesic(coil_location, (row['LAT'], row['LONG'])).km
         return sqrt(surface**2 + row['DEPTH']**2) if not pd.isna(row['DEPTH']) else surface
@@ -185,12 +199,57 @@ def get_dobrowolsky_timestamps(location="PARNON", tolerance_factor=3):
     df['PREPARATION_RADIUS'] = 10 ** (0.43 * df['MAGNITUDE'])
     df['DOBROWOLSKY'] = df['PARNON_DISTANCE'] <= (df['PREPARATION_RADIUS'] * (1 + tolerance_factor))
 
-    # Clean time
+    # Time cleanup
     df["DATE"] = pd.to_datetime(df["DATE"], errors="coerce")
     df["TIME"] = pd.to_timedelta(df["TIME"].str.replace(" ", ":"), errors="coerce")
     df["DATETIME"] = df["DATE"] + df["TIME"]
 
-    return df[df["DOBROWOLSKY"] == True]["DATETIME"].dropna().tolist()
+    # Sea check for valid entries
+    dob_df = df[df["DOBROWOLSKY"] == True].copy()
+    dob_df["SEA"] = ~dob_df.apply(lambda row: is_on_land(row["LAT"], row["LONG"]), axis=1)
+
+    return dob_df
+
+# def get_dobrowolsky_timestamps(location="PARNON", tolerance_factor=3):
+#     from math import sqrt
+#     from geopy.distance import geodesic
+
+#     base_dir = Path(__file__).resolve().parent.parent.parent
+#     output_dir = base_dir / "earthquakes_db" / "output"
+    
+#     csv_files = [f for f in output_dir.glob("*.csv") if f.name[0].isdigit()]
+#     all_data = [pd.read_csv(f) for f in csv_files]
+#     df = pd.concat(all_data, ignore_index=True)
+
+#     df.rename(columns={c: c.split('(')[0].strip().replace('.', '') for c in df.columns}, inplace=True)
+#     df['LAT'] = pd.to_numeric(df['LAT'], errors='coerce')
+#     df['LONG'] = pd.to_numeric(df['LONG'], errors='coerce')
+#     df['DEPTH'] = pd.to_numeric(df['DEPTH'], errors='coerce')
+
+#     locations = {
+#         "PARNON": (37.2609, 22.5847),
+#         "KALPAKI": (39.9126, 20.5888),
+#         "SANTORINI": (36.395675, 25.446722),
+#         "GREECE": (37.2609, 22.5847),
+#     }
+#     coil_location = locations.get(location.upper())
+#     if not coil_location:
+#         raise ValueError(f"Unknown location: {location}")
+
+#     def compute_distance(row):
+#         surface = geodesic(coil_location, (row['LAT'], row['LONG'])).km
+#         return sqrt(surface**2 + row['DEPTH']**2) if not pd.isna(row['DEPTH']) else surface
+
+#     df['PARNON_DISTANCE'] = df.apply(compute_distance, axis=1)
+#     df['PREPARATION_RADIUS'] = 10 ** (0.43 * df['MAGNITUDE'])
+#     df['DOBROWOLSKY'] = df['PARNON_DISTANCE'] <= (df['PREPARATION_RADIUS'] * (1 + tolerance_factor))
+
+#     # Clean time
+#     df["DATE"] = pd.to_datetime(df["DATE"], errors="coerce")
+#     df["TIME"] = pd.to_timedelta(df["TIME"].str.replace(" ", ":"), errors="coerce")
+#     df["DATETIME"] = df["DATE"] + df["TIME"]
+
+#     return df[df["DOBROWOLSKY"] == True]["DATETIME"].dropna().tolist()
 
 # Example usage:
 # df = process_zst_directory("/mnt/e/POLSKI_DB", "2024-12-01", "2025-04-01")
@@ -202,6 +261,10 @@ df = process_zst_directory("/mnt/e/POLSKI_DB", "2024-07-01",  "2024-12-01")
 # quake_file = base_dir / "earthquakes_db" / "output" /"dobrowolsky_parnon.csv"
 # quake_times = load_earthquake_timestamps(quake_file)
 
-quake_times = get_dobrowolsky_timestamps(location="PARNON", tolerance_factor=0.5)
+quake_df = get_dobrowolsky_timestamps(location="PARNON", tolerance_factor=0.5)
+print(quake_df[["DATETIME", "SEA"]])
+quake_times = quake_df["DATETIME"].tolist()
+
+# quake_times = get_dobrowolsky_timestamps(location="PARNON", tolerance_factor=0.5)
 
 plot_ratio_timeline(df)
