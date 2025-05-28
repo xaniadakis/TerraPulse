@@ -237,6 +237,58 @@ def split_period_into_chunks(filenames, chunk_size_hours):
 
     return chunks
 
+# second
+# def plot_spectrogram(psd_data, frequencies, time_points, start_date, end_date, 
+#                      output_filename=None, downsample_factor=1, days=1, 
+#                      filetype='NS', counter="", gaps=[]):
+#     start_time = time.time()
+
+#     # Convert PSD to decibels with accurate handling of zero or negative values
+#     psd_data_db = np.where(psd_data > 0, 10 * np.log10(psd_data), -np.inf)
+
+#     # Downsample for faster plotting if required
+#     psd_data_db = psd_data_db[::downsample_factor, :]
+#     frequencies = frequencies[::downsample_factor]
+
+#     # Introduce gaps into the spectrogram
+#     for gap_start, gap_end in gaps:
+#         gap_start_idx = int(((gap_start - start_date).total_seconds()) / (60 * INTERVAL))
+#         gap_end_idx = int(((gap_end - start_date).total_seconds()) / (60 * INTERVAL))
+#         psd_data_db[:, gap_start_idx:gap_end_idx] = np.nan  # Mask gap region
+
+#     # Mask regions with no data to plot as black
+#     psd_data_db = np.ma.masked_where(np.isnan(psd_data_db), psd_data_db)
+
+#     # Initialize the plot with a larger size for clarity
+#     plt.figure(figsize=(14, 8))
+
+#     # Use an intense colormap (e.g., 'inferno') for better visualization
+#     cmap = plt.cm.inferno
+
+#     # Define color normalization for higher accuracy in magnitudes
+#     norm = Normalize(vmin=-15, vmax=15)  # Adjust these bounds as needed
+
+#     # Create the spectrogram
+#     mesh = plt.pcolormesh(time_points, frequencies, psd_data_db, shading='auto', cmap=cmap, norm=norm)
+#     cbar = plt.colorbar(mesh, extend='both')
+#     cbar.set_label('PSD (dB)', fontsize=12)
+#     cbar.ax.tick_params(labelsize=10)
+
+#     # Set axis labels and title
+#     plt.ylabel('Frequency [Hz]', fontsize=12)
+#     plt.xlabel('Time [hours]', fontsize=12)
+#     plt.title(f'{filetype} PSD Spectrogram {counter}\n{start_date.strftime("%Y-%m-%d %H:%M")} to {end_date.strftime("%Y-%m-%d %H:%M")}', fontsize=14, pad=15)
+
+#     plt.tight_layout()
+
+#     # Save or display the plot
+#     if output_filename:
+#         plt.savefig(output_filename, dpi=600, bbox_inches='tight')
+#     else:
+#         plt.show()
+#     plt.close()
+
+# initial
 def plot_spectrogram(psd_data, frequencies, time_points, start_date, end_date, 
                      output_filename=None, downsample_factor=1, days=1, 
                      filetype='NS', counter="", gaps=[]):
@@ -428,18 +480,18 @@ def generate_spectrogram_from_zst_files(directory, output_directory,
                 f"{counter}_EWspec_{start_date.strftime('%d-%m-%Y_%H%M')}_to_{end_date.strftime('%d-%m-%Y_%H%M')}.png"
             )
             print(f"gaps in: {gaps_in_chunk}")
-            if len(gaps_in_chunk)>0:
-                print(f"{len(gaps_in_chunk)} Gaps in chunk")
-                # Plot spectrogram for this sub-period
-                plot_spectrogram(psd_NS_matrix, frequencies, time_points, start_date, end_date,
-                                output_filename=ns_output_filename, 
-                                downsample_factor=downsample_factor, filetype='NS', 
+            # if len(gaps_in_chunk)>0:
+            #     print(f"{len(gaps_in_chunk)} Gaps in chunk")
+            # Plot spectrogram for this sub-period
+            plot_spectrogram(psd_NS_matrix, frequencies, time_points, start_date, end_date,
+                            output_filename=ns_output_filename, 
+                            downsample_factor=downsample_factor, filetype='NS', 
+                            counter=counter, gaps=gaps_in_chunk)
+            if not is_single_channel:
+                plot_spectrogram(psd_EW_matrix, frequencies, time_points, start_date, end_date,
+                                output_filename=ew_output_filename,
+                                downsample_factor=downsample_factor, filetype='EW', 
                                 counter=counter, gaps=gaps_in_chunk)
-                if not is_single_channel:
-                    plot_spectrogram(psd_EW_matrix, frequencies, time_points, start_date, end_date,
-                                    output_filename=ew_output_filename,
-                                    downsample_factor=downsample_factor, filetype='EW', 
-                                    counter=counter, gaps=gaps_in_chunk)
         else:
             # Handle case where the chunk is entirely a gap
             print(f"Chunk {i + 1} contains only gaps: {gaps_in_chunk}")

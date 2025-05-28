@@ -4,13 +4,14 @@ from geopy.distance import geodesic
 import pandas as pd
 from tqdm import tqdm
 
-LOCATION = "SANTORINI"
-output_dir = "/mnt/c/Users/shumann/Documents/GaioPulse/earthquakes_db/output"
-output_dir = "/home/vag/PycharmProjects/TerraPulse/earthquakes_db/output"
+LOCATION = "GREECE"
+# output_dir = "/mnt/c/Users/shumann/Documents/GaioPulse/earthquakes_db/output"
+# output_dir = "/home/vag/PycharmProjects/TerraPulse/earthquakes_db/output"
+output_dir = os.path.join(os.path.dirname(__file__), 'output')
 
 # Boolean constant to decide the distance calculation method
 USE_HYPOTENUSE = True
-DOBROWOLSKY_TOLERANCE_FACTOR = 0.25
+DOBROWOLSKY_TOLERANCE_FACTOR = 3
 
 # Load all CSVs into a single DataFrame
 csv_files = [
@@ -45,12 +46,15 @@ combined_df['DEPTH'] = pd.to_numeric(combined_df['DEPTH'], errors='coerce')
 parnon_location = (37.2609, 22.5847)
 kalpaki_location = (39.9126, 20.5888)
 santorini_location = (36.395675, 25.446722)
+central = (39.560917, 21.791270)
 if LOCATION == "PARNON":
     coil_location = parnon_location
 elif LOCATION == "KALPAKI":
     coil_location = kalpaki_location
 elif LOCATION == "SANTORINI":
     coil_location = santorini_location
+elif LOCATION == "GREECE":
+    coil_location = parnon_location
 else:
     print(f"Can't run for unknown location: {LOCATION}")
     exit(1)
