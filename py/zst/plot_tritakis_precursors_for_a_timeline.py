@@ -151,7 +151,7 @@ def load_earthquake_timestamps(file_path):
     df = pd.read_csv(file_path, parse_dates=["DATETIME"])
     return df["DATETIME"].tolist()
 
-def get_dobrowolsky_timestamps(location="PARNON", tolerance_factor=3):
+def get_dobrowolsky_timestamps(location="PARNON", tolerance_factor=3, from_date=None, to_date=None):
     from math import sqrt
     from geopy.distance import geodesic
     import geopandas as gpd
@@ -161,25 +161,13 @@ def get_dobrowolsky_timestamps(location="PARNON", tolerance_factor=3):
     output_dir = base_dir / "earthquakes_db" / "output"
     shapefile_path = base_dir / "earthquakes_db" / "shapely" / "ne_110m_admin_0_countries.shp"
 
-    # Load country polygons
+    # Load land polygons
     land = gpd.read_file(shapefile_path)
 
-    # Function to check if a point is on land
     def is_on_land(lat, lon):
-        point = Point(lon, lat)
-        return land.contains(point).any()
+        return land.contains(Point(lon, lat)).any()
 
-    # Load and prepare earthquake data
-    csv_files = [f for f in output_dir.glob("*.csv") if f.name[0].isdigit()]
-    all_data = [pd.read_csv(f) for f in csv_files]
-    df = pd.concat(all_data, ignore_index=True)
-
-    df.rename(columns={c: c.split('(')[0].strip().replace('.', '') for c in df.columns}, inplace=True)
-    df['LAT'] = pd.to_numeric(df['LAT'], errors='coerce')
-    df['LONG'] = pd.to_numeric(df['LONG'], errors='coerce')
-    df['DEPTH'] = pd.to_numeric(df['DEPTH'], errors='coerce')
-
-    # Coil location mapping
+    # Coil location
     locations = {
         "PARNON": (37.2609, 22.5847),
         "KALPAKI": (39.9126, 20.5888),
@@ -190,7 +178,30 @@ def get_dobrowolsky_timestamps(location="PARNON", tolerance_factor=3):
     if not coil_location:
         raise ValueError(f"Unknown location: {location}")
 
-    # Distance and Dobrowolsky
+    # Load and concatenate all CSVs
+    csv_files = [f for f in output_dir.glob("*.csv") if f.name[0].isdigit()]
+    all_data = [pd.read_csv(f) for f in csv_files]
+    df = pd.concat(all_data, ignore_index=True)
+
+    # Standardize column names
+    df.rename(columns={c: c.split('(')[0].strip().replace('.', '') for c in df.columns}, inplace=True)
+
+    # Parse datetimes
+    df['LAT'] = pd.to_numeric(df['LAT'], errors='coerce')
+    df['LONG'] = pd.to_numeric(df['LONG'], errors='coerce')
+    df['DEPTH'] = pd.to_numeric(df['DEPTH'], errors='coerce')
+    df['MAGNITUDE'] = pd.to_numeric(df['MAGNITUDE'], errors='coerce')
+    df["DATE"] = pd.to_datetime(df["DATE"], errors="coerce")
+    df["TIME"] = pd.to_timedelta(df["TIME"].astype(str).str.replace(" ", ":"), errors="coerce")
+    df["DATETIME"] = df["DATE"] + df["TIME"]
+
+    # Filter by time range
+    if from_date:
+        df = df[df["DATETIME"] >= pd.to_datetime(from_date)]
+    if to_date:
+        df = df[df["DATETIME"] <= pd.to_datetime(to_date)]
+
+    # Compute Dobrowolsky condition
     def compute_distance(row):
         surface = geodesic(coil_location, (row['LAT'], row['LONG'])).km
         return sqrt(surface**2 + row['DEPTH']**2) if not pd.isna(row['DEPTH']) else surface
@@ -199,24 +210,32 @@ def get_dobrowolsky_timestamps(location="PARNON", tolerance_factor=3):
     df['PREPARATION_RADIUS'] = 10 ** (0.43 * df['MAGNITUDE'])
     df['DOBROWOLSKY'] = df['PARNON_DISTANCE'] <= (df['PREPARATION_RADIUS'] * (1 + tolerance_factor))
 
-    # Time cleanup
-    df["DATE"] = pd.to_datetime(df["DATE"], errors="coerce")
-    df["TIME"] = pd.to_timedelta(df["TIME"].str.replace(" ", ":"), errors="coerce")
-    df["DATETIME"] = df["DATE"] + df["TIME"]
-
-    # Sea check for valid entries
+    # Filter to events that satisfy Dobrowolsky
     dob_df = df[df["DOBROWOLSKY"] == True].copy()
     dob_df["SEA"] = ~dob_df.apply(lambda row: is_on_land(row["LAT"], row["LONG"]), axis=1)
 
     return dob_df
 
+
 # def get_dobrowolsky_timestamps(location="PARNON", tolerance_factor=3):
 #     from math import sqrt
 #     from geopy.distance import geodesic
+#     import geopandas as gpd
+#     from shapely.geometry import Point
 
 #     base_dir = Path(__file__).resolve().parent.parent.parent
 #     output_dir = base_dir / "earthquakes_db" / "output"
-    
+#     shapefile_path = base_dir / "earthquakes_db" / "shapely" / "ne_110m_admin_0_countries.shp"
+
+#     # Load country polygons
+#     land = gpd.read_file(shapefile_path)
+
+#     # Function to check if a point is on land
+#     def is_on_land(lat, lon):
+#         point = Point(lon, lat)
+#         return land.contains(point).any()
+
+#     # Load and prepare earthquake data
 #     csv_files = [f for f in output_dir.glob("*.csv") if f.name[0].isdigit()]
 #     all_data = [pd.read_csv(f) for f in csv_files]
 #     df = pd.concat(all_data, ignore_index=True)
@@ -226,6 +245,7 @@ def get_dobrowolsky_timestamps(location="PARNON", tolerance_factor=3):
 #     df['LONG'] = pd.to_numeric(df['LONG'], errors='coerce')
 #     df['DEPTH'] = pd.to_numeric(df['DEPTH'], errors='coerce')
 
+#     # Coil location mapping
 #     locations = {
 #         "PARNON": (37.2609, 22.5847),
 #         "KALPAKI": (39.9126, 20.5888),
@@ -236,6 +256,7 @@ def get_dobrowolsky_timestamps(location="PARNON", tolerance_factor=3):
 #     if not coil_location:
 #         raise ValueError(f"Unknown location: {location}")
 
+#     # Distance and Dobrowolsky
 #     def compute_distance(row):
 #         surface = geodesic(coil_location, (row['LAT'], row['LONG'])).km
 #         return sqrt(surface**2 + row['DEPTH']**2) if not pd.isna(row['DEPTH']) else surface
@@ -244,27 +265,78 @@ def get_dobrowolsky_timestamps(location="PARNON", tolerance_factor=3):
 #     df['PREPARATION_RADIUS'] = 10 ** (0.43 * df['MAGNITUDE'])
 #     df['DOBROWOLSKY'] = df['PARNON_DISTANCE'] <= (df['PREPARATION_RADIUS'] * (1 + tolerance_factor))
 
-#     # Clean time
+#     # Time cleanup
 #     df["DATE"] = pd.to_datetime(df["DATE"], errors="coerce")
 #     df["TIME"] = pd.to_timedelta(df["TIME"].str.replace(" ", ":"), errors="coerce")
 #     df["DATETIME"] = df["DATE"] + df["TIME"]
 
-#     return df[df["DOBROWOLSKY"] == True]["DATETIME"].dropna().tolist()
+#     # Sea check for valid entries
+#     dob_df = df[df["DOBROWOLSKY"] == True].copy()
+#     dob_df["SEA"] = ~dob_df.apply(lambda row: is_on_land(row["LAT"], row["LONG"]), axis=1)
 
-# Example usage:
-# df = process_zst_directory("/mnt/e/POLSKI_DB", "2024-12-01", "2025-04-01")
-df = process_zst_directory("/mnt/e/POLSKI_DB", "2024-07-01",  "2024-12-01")
+#     return dob_df
 
-# from pathlib import Path
+def list_cached_periods(cache_dir="cache"):
+    cache_files = Path(cache_dir).glob("ratios_*.csv")
+    periods = []
+    for file in cache_files:
+        parts = file.stem.split("_")
+        for i in range(len(parts)):
+            try:
+                start_date = datetime.strptime("_".join(parts[i:i+3]), "%Y_%m_%d").date()
+                end_date = datetime.strptime("_".join(parts[i+3:i+6]), "%Y_%m_%d").date()
+                periods.append({
+                    "file": file,
+                    "start": start_date,
+                    "end": end_date
+                })
+                break
+            except:
+                continue
+    return sorted(periods, key=lambda x: x["start"])
 
-# base_dir = Path(__file__).resolve().parent.parent.parent
-# quake_file = base_dir / "earthquakes_db" / "output" /"dobrowolsky_parnon.csv"
-# quake_times = load_earthquake_timestamps(quake_file)
 
-quake_df = get_dobrowolsky_timestamps(location="PARNON", tolerance_factor=0.5)
-print(quake_df[["DATETIME", "SEA"]])
-quake_times = quake_df["DATETIME"].tolist()
+if __name__ == "__main__":
 
-# quake_times = get_dobrowolsky_timestamps(location="PARNON", tolerance_factor=0.5)
+    cached_periods = list_cached_periods()
+    if cached_periods:
+        print("Available cached periods:")
+        for i, p in enumerate(cached_periods):
+            print(f"{i}: {p['start']} to {p['end']}  →  {p['file'].name}")
 
-plot_ratio_timeline(df)
+        choice = input("Select cache index to load or press Enter to create new: ").strip()
+        if choice.isdigit() and int(choice) < len(cached_periods):
+            selected = cached_periods[int(choice)]
+            df = pd.read_csv(selected["file"], parse_dates=["timestamp"])
+        else:
+            from_date = input("Enter start date (YYYY-MM-DD): ").strip()
+            to_date = input("Enter end date (YYYY-MM-DD): ").strip()
+            df = process_zst_directory("/mnt/e/POLSKI_DB", from_date, to_date)
+    else:
+        print("No cached periods found.")
+        from_date = input("Enter start date (YYYY-MM-DD): ").strip()
+        to_date = input("Enter end date (YYYY-MM-DD): ").strip()
+        df = process_zst_directory("/mnt/e/POLSKI_DB", from_date, to_date)
+
+    # df = process_zst_directory("/mnt/e/POLSKI_DB", "2024-12-01", "2025-04-01")
+    # df = process_zst_directory("/mnt/e/POLSKI_DB", "2024-07-01",  "2024-12-01")
+
+    # from pathlib import Path
+
+    # base_dir = Path(__file__).resolve().parent.parent.parent
+    # quake_file = base_dir / "earthquakes_db" / "output" /"dobrowolsky_parnon.csv"
+    # quake_times = load_earthquake_timestamps(quake_file)
+
+    quake_df = get_dobrowolsky_timestamps(
+        location="PARNON",
+        tolerance_factor=1,
+        from_date=df["timestamp"].min(),
+        to_date=df["timestamp"].max()
+    )
+
+    print(quake_df[["DATETIME", "SEA"]])
+    quake_times = quake_df["DATETIME"].tolist()
+
+    # quake_times = get_dobrowolsky_timestamps(location="PARNON", tolerance_factor=0.5)
+
+    plot_ratio_timeline(df)
