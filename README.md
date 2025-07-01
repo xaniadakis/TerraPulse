@@ -1,73 +1,135 @@
+# 🫀 TerraPulse
 
-compile and run signal to zst flow by running the bash script:
- > ./signalforge.sh pol /mnt/f/POLISH\ DATA/Raw\ Data/JanuszNew /mnt/e/POLSKI_DB
- > ./signalforge.sh hel /mnt/e/KalpakiSortedData/180102_15 /mnt/e/HELLENIC_DB
- > python3 signalforge.py hel /mnt/e/KalpakiSortedData/180102_15 /mnt/e/HELLENIC_DB
+TerraPulse explores potential correlations between seismic activity 
+and variations in both ionospheric parameters and extremely low frequency 
+(ELF) wave behavior. We combine geophysical data processing, anomaly detection, 
+statistical analysis and deep learning to uncover subtle signals that 
+may precede earthquakes. To enable large-scale analysis, we apply extensive 
+preprocessing to transform our multi-year, multi-site signal dataset into a 
+compact, manageable format. This is an ongoing and evolving project, 
+actively expanding as new techniques, analyses, and insights are progressively
+integrated.
 
-if you need to plot psd from c (not properly working yet):
- > gnuplot -e "set terminal png; set output '202301060125_psd.png'; set xlabel 'Frequency (Hz)'; set ylabel 'PSD'; set xrange [0:50]; set yrange [0:0.6]; plot './output/202301060125_psd.txt' using 1:2 with lines title 'PSD'"
+---
 
-To convert my code from matlab to C, I run this:
- > codegen lorentzian_fit_psd -args {coder.typeof(0, [10000, 1], [1, 0]), coder.typeof(0, [10000, 1], [1, 0]), 0} -o lorentzian_fit_psd_codegen -config:lib -g
+## 🧪 Datasets
 
-we need to include those headers to potentially run the code:
- > gcc -I/usr/local/MATLAB/R2024a/extern/include -I/home/vag/PycharmProjects/TerraPulse/matlab/codegen/lib/lorentzian_fit_psd main.c -o main
+As we said we integrate multi-year, multimodal datasets from ELF, ionospheric 
+and seismic sources, namely:
+
+- **ELF Signal Data:** 
+  Acquired from long-term monitoring stations in:
+  - **Kalpaki, Greece**
+  - **Parnon, Greece**
+  - **Hylaty, Poland**  
+
+- **Ionospheric Parameters:**  
+  - **Athens NOA Ground Ionosonde**: Provides a rich set of ionospheric characteristics including:  
+    `foF2`, `foE`, `foEs`, `h'F2`, `h'F`, `MUFD` and many others. Retrieved as
+  CSVs with associated confidence scores cleaned and interpolated where needed.
+  
+  - **ESA SWARM Mission**: Data from the **Alpha**, **Bravo**, and **Charlie** satellites.  
+    Includes `vTEC`, electron density and magnetic field perturbations. Level 2 products parsed from daily ZIP archives and aligned with ground events.
+
+- **Seismic Catalog**  
+  - **NOA Earthquake Logs**: Regional seismic metadata covering Greece and nearby regions.  
+
+As will become evident in the next sections, all datasets undergo extensive preprocessing for temporal alignment, spatial referencing and format normalization, 
+enabling robust spatiotemporal correlation analysis and downstream modeling.
+
+---
+
+## ⚙️ Preprocessing Pipeline
+
+To make large-scale analysis feasible, we perform intensive preprocessing
+to reduce the complexity and size of multi-year geophysical recordings collected
+from diverse sources and locations. This step is essential for handling 
+high-volume, heterogeneous ELF and ionospheric data and preparing it for 
+downstream modeling.
+
+Our project features a dual-stage preprocessing framework implemented in both C and Python to efficiently convert raw binary outputs from various geophysical sources into a consistent, lightweight format. This conversion enables the application of machine learning and statistical analysis techniques on large-scale ionospheric and ELF datasets.
+
+- C components handle fast parsing, conversion, and initial formatting of binary signals.
+
+- Python modules compute spectral features like power spectral density (PSD) & Lorentzian modeling of the signals
+and manage downstream ML-readiness.
+
+Automated via signalforge.py, supporting batch runs, logging and optional skip steps for development.
+
+---
+
+## 🌍 Earthquake Integration 
+To contextualize and interpret ELF and ionospheric anomalies, 
+we incorporate seismic data scraped from official catalogs (e.g., NOA) and 
+parse them into clean, geospatially-indexed formats. Namely, we:
+
+- Automatically fetch, parse and convert earthquake data 
+- Filter for region-specific proximity using Dobrovolsky's empirical law or other approximations
+- Compute spatial distances and effective preparation zones relative to sensor sites
+- Bind ELF or ionospheric signals to nearby seismic events with temporal alignment
+
+This step, following preprocessing, provides the foundation for spatiotemporal 
+analysis, enabling enabling us to apply machine learning and statistical techniques
+to explore potential correlations between signals and seismic activity.
+
+---
+
+## 🌌 Ionospheric Data Fusion
+
+Vertical TEC, foF2, MUFD, and other parameters are aggregated from both
+SWARM satellites and ground-based Athens NOA station. The pipeline handles:
+
+- CSV parsing, temporal alignment, and filtering by confidence (e.g., CS > 70).
+- Missing data handling through dynamic thresholding and imputation.
+- Effors to correlate these features with earthquake magnitude using
+decay-weighted temporal proximity.
+
+This module enriches our dataset with atmospheric context, enabling robust feature importance studies and multimodal fusion with ELF signals.
 
 
-python3 signalforge.py hel 'F:\SouthStationSimple' 'E:\HELLENIC_DB'
-run hel /mnt/f/SouthStationSimple /mnt/f/HELLENIC_DB
+---
+
+## 🔬 Exploration & Modeling
+
+The exploration stage builds on preprocessed, aligned ELF and ionospheric 
+data to uncover meaningful patterns and potential seismic precursors. 
+ This phase applies a broad range of analytical techniques, of which we 
+make an effort to summarize the foundational ideas:
+
+* **Spectral and temporal pattern extraction**: Compute and study power distributions, periodic structures, and frequency shifts in ELF signals across time, locations, and polarizations.
+* **Anomaly detection**: Combine clustering, density-based, probabilistic and neural approaches to flag deviations from expected spectral behavior.
+* **Earthquake correlation**: Use spatiotemporal proximity to label and analyze signals in the context of seismic events, enabling targeted precursor analysis.
+* **Dimensionality reduction and feature engineering**: Construct meaningful low-dimensional representations from high-frequency inputs to support statistical modeling and interpretation.
+* **Predictive modeling and hypothesis testing**: Evaluate the significance and consistency of discovered anomalies using both unsupervised exploration and supervised learning models.
+* **Visualization and UI tooling**: Develop interactive interfaces, diagnostic plots, and mapping utilities to support exploratory analysis and pattern interpretation across domains.
+
+Together, these efforts, among numerous others, form our analytical approach
+to assess whether weak or transient signal patterns may carry predictive 
+or descriptive value in earthquake science.
+
+---
 
 
-mount external hdd to wsl:
-sudo mkdir -p /mnt/g
-sudo mount -t drvfs G: /mnt/g
-sudo umount /mnt/f
+## 🔭 Outlook
 
-udisksctl unmount -b /mnt/f
-udisksctl power-off -b /mnt/f
+TerraPulse is an active project with ongoing development. Future updates will expand datasets, refine models, and deepen insight into geophysical signal correlations.
 
+---
 
-python3 signalforge.py hel 'F:\Βόρειος Σταθμός Simple' 'F:\ΒΟΡΕΙΟΣ Σταθμός (506gb)' 'E:\NEW_NORTH_HELLENIC_DB' 
+## Acknowledgments
 
-python3 signalforge.py pol 'E:\MEGA_POLISH_DATA\Summer 24\20240620' '../testthisone/'
+The ELF monitoring stations in Kalpaki and Parnon - operated by the Academy 
+of Athens - and in Hylaty, Poland are gratefully acknowledged for providing
+long-term ELF data. Appreciation is also extended to the National 
+Observatory of Athens (NOA) for ground-based ionospheric and seismic records,
+and to the European Space Agency’s SWARM mission for satellite-based 
+ionospheric parameters.
 
-python3 signalforge.py pol 'E:\MEGA_POLISH_DATA' 'F:\TRIPLE and DOUBLE\ΠΟΛΟΝΙΚΟ ΣΥΣΤΗΜΑ' 'F:\POLISH DATA\Raw Data' 'F:\ΝΟΤΕΙΟΣ Σταθμός (867Gb)\RAW DATA POLISH' 'E:\POLISH_DATA\Raw_Data' 'E:\POLSKI_DB'
+---
 
-python3 py/plot_period_spectograms.py -d '/mnt/e/AGAIN_NORTH_HELLENIC_DB' -o '../testspechelnORTH' -t hel -y 2020
-python3 py/plot_period_spectograms.py -d '/mnt/e/POLSKI_DB' -o '../testspecpol' -t pol -y 2024
+## License
 
-python3 py/plot_period_spectograms.py -d '/mnt/e/NEW_POLSKI_DB' -o '../spectrograms_pol' -t pol
-
-python3 signalforge.py hel '\mnt\g\Greek Data\Kalpaki' '\mnt\g\Greek Data\Kalpaki\SRdatataxinomimena Triple' '\mnt\g\Greek Data\Kalpaki\Tests north' '\mnt\g\Greek Data\Kalpaki\Tests north\NEOCHORI' '\mnt\g\Kalpaki20170104' '\mnt\g\Kalpaki4' '\mnt\g\Kalpaki5' '\mnt\g\SRD Sata\ΜΕΤΑΦΟΡΑ\DATAnew' '\mnt\g\SRD Sata\ΜΕΤΑΦΟΡΑ\DATAnew\KALNS190116till220416' '\mnt\g\SRD Sata\ΜΕΤΑΦΟΡΑ\DATAnew\KalNS160119till0329' '\mnt\g\kalpaki_ns' 'E:\LATEST_NORTH_HELLENIC_DB'
-
-python3 signalforge.py hel '\mnt\g\Greek Data\Parnon\Raw Data' '\mnt\g\Greek Data\Parnon\Raw Data\Parnon220722  OK' '\mnt\g\MY PASSPORT\DubParnon220722  OK' '\mnt\g\MY PASSPORT\Dubbles PC' '\mnt\g\MY PASSPORT\Dubbles PC\Parnon220722' '\mnt\g\MY PASSPORT\ΑΤΑΞΙΝΟΜΗΤΑ' '\mnt\g\MY PASSPORT\ΑΤΑΞΙΝΟΜΗΤΑ\Parnon220722' '\mnt\g\MY PASSPORT\ΤΑΞΙΝΟΜΗΣΕΙΣ' '\mnt\g\MY PASSPORT\ΤΑΞΙΝΟΜΗΣΕΙΣ' '\mnt\g\Parnon151119' '\mnt\g\Parnon20230706' '\mnt\g\SRD Sata' '\mnt\g\SRD Sata' '\mnt\g\SRD Sata\ΜΕΤΑΦΟΡΑ' '\mnt\g\SRD Sata\ΜΕΤΑΦΟΡΑ\DATASR' '\mnt\g\Semi SOUTH STATION' '\mnt\g\Semi SOUTH STATION\DRAFI' '\mnt\g\Semi SOUTH STATION\PARNON data\Images' '\mnt\g\Semi SOUTH STATION\PARNON data\Measurements' '\mnt\g\Semi SOUTH STATION\ParnonGen' '\mnt\g\Semi SOUTH STATION\SRData' '\mnt\g\TURBO-X\plaisio\Desktop' '\mnt\g\srParnon November 22' '\mnt\g\ΑΡΧΕΙΑ SRD\PARNON Raw Data' 'E:\LATEST_SOUTH_HELLENIC_DB'
+For academic use only. Licensed under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/)
 
 
 
-#no precursor, light quake
-python3 py/signal_to_psd.py --file-path '/mnt/e/NEW_POLSKI_DB/20220620/202206200055.pol'
-
-#no precursor, light quake
-python3 py/signal_to_psd.py --file-path '/mnt/e/NEW_POLSKI_DB/20220427/202204270150.pol' 
-
-
-python3 py/signal_to_psd.py --file-path '/mnt/e/NEW_POLSKI_DB/20211218/202112180515.pol'
-
-python3 py/signal_to_psd.py --file-path '/mnt/e/NEW_POLSKI_DB/20211012/202110120920.pol' --no-fit
-
-python3 py/signal_to_psd.py --file-path '/mnt/e/NEW_POLSKI_DB/20210304/202103041835.pol' --no-fit
-
-# so much "precursors" that seems like some other noise
-python3 py/signal_to_psd.py --file-path '/mnt/e/NEW_POLSKI_DB/20210303/202103031015.pol' --no-fit
-
-# so much "precursors" that seems like some other noise
-python3 py/signal_to_psd.py --file-path '/mnt/e/NEW_POLSKI_DB/20210217/202102170335.pol' --no-fit
-
-python3 py/signal_to_psd.py --file-path '/mnt/e/NEW_POLSKI_DB/20211010/202110101115.pol' --no-fit
-
-python3 py/plot_period_spectograms.py -d '/mnt/e/NEW2_POLSKI_DB' -o '../spectrograms_pol' -t pol
-
-python3 py/signal_to_psd.py --gui -t pol --no-fit
-
-
-07-27-2024 15:35 LOOKS LIKE PRECURSOR BUT IT AINT BECAUSE QUAKE IS AT CRETE, TOO FAR
