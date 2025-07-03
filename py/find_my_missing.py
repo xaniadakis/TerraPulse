@@ -2,44 +2,44 @@ import os
 import argparse
 from collections import defaultdict
 
-def check_missing_files(generated_directory, original_directory, generated_file_type, original_file_type, log_file_path="missing_files.log"):
+def find_missing_gen_files(generated_directory, generated_file_type, log_file_path="missing_gen_files.log", log=False):
+    # Find missing generated files 
     gen_missing_files_details = {}
     gen_missing_files_count = {}
     gen_bad = 0
     gen_good = 0
-    # with open(log_file_path, "w") as log_file:
-    for subdir in os.listdir(generated_directory):
-            subdir_path = os.path.join(generated_directory, subdir)
-            
-            if os.path.isdir(subdir_path) and subdir.isdigit() and len(subdir) == 8:
-                expected_txt_files = {f"{subdir}{hour:02d}{minute:02d}.{generated_file_type}" for hour in range(24) for minute in range(0, 60, 5)}
-                expected_zst_files = {f"{subdir}{hour:02d}{minute:02d}.zst" for hour in range(24) for minute in range(0, 60, 5)}
+    with open(log_file_path, "w") as log_file:
+        for subdir in os.listdir(generated_directory):
+                subdir_path = os.path.join(generated_directory, subdir)
                 
-                actual_files = set(os.listdir(subdir_path))
-                
-                missing_txt = expected_txt_files - actual_files
-                missing_zst = expected_zst_files - actual_files
-                
-                if missing_txt or missing_zst:
-                    gen_missing_files_count[subdir] = {
-                        generated_file_type: len(missing_txt),
-                        "zst": len(missing_zst)
-                    }
+                if os.path.isdir(subdir_path) and subdir.isdigit() and len(subdir) == 8:
+                    expected_txt_files = {f"{subdir}{hour:02d}{minute:02d}.{generated_file_type}" for hour in range(24) for minute in range(0, 60, 5)}
+                    expected_zst_files = {f"{subdir}{hour:02d}{minute:02d}.zst" for hour in range(24) for minute in range(0, 60, 5)}
                     
-                    filenames_without_extensions = [os.path.splitext(os.path.basename(path))[0] for path in missing_txt]
-                    psdfiles_without_extensions = [os.path.splitext(os.path.basename(path))[0] for path in missing_zst]
-                    gen_missing_files_details[subdir] = {
-                        generated_file_type: sorted(filenames_without_extensions),
-                        "zst": sorted(psdfiles_without_extensions),
-                    }
+                    actual_files = set(os.listdir(subdir_path))
+                    
+                    missing_txt = expected_txt_files - actual_files
+                    missing_zst = expected_zst_files - actual_files
+                    
+                    if missing_txt or missing_zst:
+                        gen_missing_files_count[subdir] = {
+                            generated_file_type: len(missing_txt),
+                            "zst": len(missing_zst)
+                        }
+                        
+                        filenames_without_extensions = [os.path.splitext(os.path.basename(path))[0] for path in missing_txt]
+                        psdfiles_without_extensions = [os.path.splitext(os.path.basename(path))[0] for path in missing_zst]
+                        gen_missing_files_details[subdir] = {
+                            generated_file_type: sorted(filenames_without_extensions),
+                            "zst": sorted(psdfiles_without_extensions),
+                        }
 
-                    # log_file.write(f"Missing files in {subdir}:\n")
-                    # for file in sorted(missing_txt | missing_zst):
-                    #     log_file.write(f" - {file}\n")
-                else:
-                    gen_missing_files_count[subdir] = "OK"
-
-    # Summary of missing files by directory
+                        if log:
+                            log_file.write(f"Missing files in {subdir}:\n")
+                            for file in sorted(missing_txt | missing_zst):
+                                log_file.write(f" - {file}\n")
+                    else:
+                        gen_missing_files_count[subdir] = "OK"
 
     for subdir, status in gen_missing_files_count.items():
         if status == "OK":
@@ -49,7 +49,11 @@ def check_missing_files(generated_directory, original_directory, generated_file_
             gen_bad += 1
             print(f"{gen_bad}. {subdir} dir - Missing {generated_file_type} files: {status[generated_file_type]}, Missing zst files: {status['zst']}")
     print(f"{gen_good} good days & {gen_bad} bad days.")
+    return gen_missing_files_details
 
+def find_missing_og_files(original_directory, original_file_type, log_file_path="missing_og_files.log", log=False):
+    
+    # Find missing original files 
     og_missing_files_details = {}
     og_missing_files_count = defaultdict(lambda: {"missing": 288, "found_files": set(), "path": None})
     og_good = 0
@@ -74,27 +78,34 @@ def check_missing_files(generated_directory, original_directory, generated_file_
     # Calculate missing files for each date by comparing the full set of expected files with the combined found files
     sorted_missing_files_count = dict(sorted(og_missing_files_count.items()))
     
-    # Write results to the log file and print summary
-    # with open(log_file_path, "w") as log_file:
-    for subdir, info in sorted_missing_files_count.items():
-        expected_dat_files = {f"{subdir}{hour:02d}{minute:02d}.{original_file_type}" for hour in range(24) for minute in range(0, 60, 5)}
-        missing_files = expected_dat_files - info["found_files"]
-        missing_count = len(missing_files)
-        
-        filenames_without_extensions = [os.path.splitext(os.path.basename(path))[0] for path in missing_files]
-        og_missing_files_details[subdir] = {
-            original_file_type: sorted(filenames_without_extensions),
-        }
-        
-        if missing_count == 0:
-            og_good += 1
-        else:
-            og_bad += 1
-            print(f"{og_bad}. {subdir} dir - Missing {original_file_type} files: {missing_count}")
-            # log_file.write(f"Missing files in {subdir} (path: {info['path']}):\n")
-            # for file in sorted(missing_files):
-            #     log_file.write(f" - {file}\n")
+    with open(log_file_path, "w") as log_file:
+        for subdir, info in sorted_missing_files_count.items():
+            expected_dat_files = {f"{subdir}{hour:02d}{minute:02d}.{original_file_type}" for hour in range(24) for minute in range(0, 60, 5)}
+            missing_files = expected_dat_files - info["found_files"]
+            missing_count = len(missing_files)
+            
+            filenames_without_extensions = [os.path.splitext(os.path.basename(path))[0] for path in missing_files]
+            og_missing_files_details[subdir] = {
+                original_file_type: sorted(filenames_without_extensions),
+            }
+            
+            if missing_count == 0:
+                og_good += 1
+            else:
+                og_bad += 1
+                print(f"{og_bad}. {subdir} dir - Missing {original_file_type} files: {missing_count}")
+                if log:
+                    log_file.write(f"Missing files in {subdir} (path: {info['path']}):\n")
+                    for file in sorted(missing_files):
+                        log_file.write(f" - {file}\n")
     print(f"{og_good} good days & {og_bad} bad days.")
+    return og_missing_files_details
+
+
+def check_missing_files(generated_directory, original_directory, generated_file_type, original_file_type, log_file_path="missing_files.log"):
+    
+    gen_missing_files_details = find_missing_gen_files(generated_directory=generated_directory, generated_file_type=generated_file_type)
+    og_missing_files_details = find_missing_og_files(original_directory=original_directory, original_file_type=original_file_type)
 
     # Print the non generated files
     with open(log_file_path, "w") as log_file:
@@ -113,37 +124,13 @@ def check_missing_files(generated_directory, original_directory, generated_file_
                     if item not in og_missing_files[original_file_type]
                 ]
 
-                log_file.write(f"Missing files in {subdir}):\n")
+                log_file.write(f"Missing files in {gen_subdir}):\n")
                 for i, file in enumerate(sorted(gen_missing_files[generated_file_type])):
                     log_file.write(f" {i}. {file}.{generated_file_type}\n")
                 for i, file in enumerate(sorted(gen_missing_files["zst"])):
                     log_file.write(f" {i}. {file}.{"zst"}\n")
             else:
                 print(f"OG DIR not found for GEN DIR: {gen_subdir}")
-
-    # for og_subdir, og_missing_files in og_missing_files_details.items():
-    #     if og_subdir in gen_missing_files_details:
-    #         gen_missing_files = gen_missing_files_details[og_subdir]
-    #     else:
-    #         print(f"{og_subdir} is missing in original data but exists in generated data.")
-
-    # for gen_subdir, gen_missing_files in gen_missing_files_details.items():
-        # Check if the corresponding directory exists in og_missing_files_details
-        if gen_subdir in og_missing_files_details:
-            og_missing_files = og_missing_files_details[gen_subdir]
-
-            # Get elements in og_missing_files[original_file_type] that are not in gen_missing_files[generated_file_type]
-            missing_in_og_not_in_gen = [
-                item for item in og_missing_files[original_file_type]
-                if item not in gen_missing_files[generated_file_type]
-            ]
-            print(missing_in_og_not_in_gen)
-            if(len(missing_in_og_not_in_gen[original_file_type])>0):
-                print(f"Generated garbage in: {gen_subdir}! ({len(missing_in_og_not_in_gen[original_file_type])})")
-        else:
-            if(len(missing_in_og_not_in_gen[original_file_type])>0):
-                print(f"Generated garbage in: {gen_subdir}!")
-
 
 def translate_windows_to_linux_path(windows_path):
     """

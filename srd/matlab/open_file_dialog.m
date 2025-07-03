@@ -7,7 +7,7 @@ t2 = 600;
 persistent lastPath;
 global spectrum_range;
 
-spectrum_range = [2, 42];
+spectrum_range = [3, 48];
 
 if isempty(lastPath) 
     lastPath = 0;

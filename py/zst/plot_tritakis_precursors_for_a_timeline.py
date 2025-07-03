@@ -18,7 +18,7 @@ Y_WINDOW_DAYS = 14    # days for counting high-ratio points (y-axis, current + p
 # Exclude a time period from the df
 EXCLUDE_FROM = "2024-11-16"
 EXCLUDE_TO = "2024-11-18"
-EXCLUDE_PERIOD = True
+EXCLUDE_PERIOD = False
 
 def extract_psd_data(file_path):
     try:
@@ -94,11 +94,11 @@ def process_zst_directory(root_dir, from_date, to_date):
     print(f"💾 Saved results to {cache_file}")
     return df
 
-def plot_ratio_timeline(df, show_quakes=True):
+def plot_ratio_timeline(df, show_quakes=True, filename=None):
     df = df.sort_values("timestamp")
     plt.figure(figsize=(14, 10))
     df = df.copy()
-    df["highlight"] = df["max_20_30_ratio"] > 4
+    df["highlight"] = df["max_20_30_ratio"] > 2
     df["size"] = df["highlight"].map({True: 30, False: 10})
 
     sns.scatterplot(
@@ -169,7 +169,11 @@ def plot_ratio_timeline(df, show_quakes=True):
     # plt.xlim([df["timestamp"].min(), pd.Timestamp("2024-03-19")])
     plt.legend()
     plt.tight_layout()
-    plt.show()
+    if filename:
+        plt.savefig(filename, dpi=300)
+        plt.close()
+    else:
+        plt.show()
 
 def load_earthquake_timestamps(file_path):
     df = pd.read_csv(file_path, parse_dates=["DATETIME"])
@@ -372,7 +376,7 @@ def list_cached_periods(cache_dir="cache"):
 
 #     return result_df
 
-def make_weekly_correlation_plot(df, quake_df, start_date=None, end_date=None):
+def make_weekly_correlation_plot(df, quake_df, start_date=None, end_date=None, filename=None):
     df = df.sort_values("timestamp")
     quake_df = quake_df.sort_values("DATETIME")
 
@@ -426,7 +430,12 @@ def make_weekly_correlation_plot(df, quake_df, start_date=None, end_date=None):
     plt.title("Distribution of High-Ratio Energy Activity by Weekly Earthquake Count")
     plt.grid(True, linestyle="--", linewidth=0.5)
     plt.tight_layout()
-    plt.show()
+
+    if filename:
+        plt.savefig(filename, dpi=300)
+        plt.close()
+    else:
+        plt.show()
 
     return result_df
 
@@ -444,7 +453,7 @@ def get_available_date_range(root_dir):
     return min(dates), max(dates)
 
 if __name__ == "__main__":
-    dir_path = "/mnt/e/POLSKI_DB" # "/mnt/e/ON_POLAND/PROCESSED"
+    dir_path =  "/mnt/e/ON_POLAND/PROCESSED" # "/mnt/e/POLSKI_DB" # "/mnt/e/ON_POLAND/PROCESSED"
     cached_periods = list_cached_periods()
     if cached_periods:
         print("Available cached periods:")
@@ -506,6 +515,6 @@ if __name__ == "__main__":
 
     # quake_times = get_dobrowolsky_timestamps(location="PARNON", tolerance_factor=0.5)
 
-    show_quakes = True  
+    show_quakes = False  
     plot_ratio_timeline(df, show_quakes)
     make_weekly_correlation_plot(df, quake_df)

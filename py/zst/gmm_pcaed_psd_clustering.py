@@ -11,14 +11,21 @@ from sklearn.mixture import GaussianMixture
 from scipy.stats import entropy
 from scipy.spatial.distance import euclidean
 from fastdtw import fastdtw
+from datetime import datetime
 
 # Directory where your data is stored
-DATA_DIR = "~/Documents/POLSKI_SAMPLES"
+DATA_DIR = "/mnt/e/NEW_POLSKI_DB"
 DATA_DIR = os.path.expanduser(DATA_DIR)
-PLOT = False
+PLOT = True
 DO_HMM = False
+# Define timestamp range
+# start_timestamp = "20240101" 
+# end_timestamp = "20240201"  
+start_timestamp = "20240301" 
+end_timestamp = "20240415"  
 
-
+# start_timestamp = "20211001" 
+# end_timestamp = "20211029"
 
 # def extract_spectral_features(psd_values, freqs):
 #     """Extracts shape-based spectral features from PSD."""
@@ -156,131 +163,154 @@ def extract_psd_data(file_path):
 # Collect all .zst files
 all_files = sorted(Path(DATA_DIR).rglob("*.zst"))
 all_data = []
-print(f"Found {len(all_files)} files. Extracting PSD data...")
+
+
+# Convert timestamps to datetime objects for comparison
+start_dt = datetime.strptime(start_timestamp, "%Y%m%d")
+end_dt = datetime.strptime(end_timestamp, "%Y%m%d")
+
+# Collect all .zst files only from specific subdirectories within range
+all_files = []
+for subdir in sorted(Path(DATA_DIR).iterdir()):
+    if subdir.is_dir():
+        try:
+            dir_timestamp = datetime.strptime(subdir.name, "%Y%m%d")
+            if start_dt <= dir_timestamp <= end_dt:
+                all_files.extend(subdir.rglob("*.zst"))
+        except ValueError:
+            continue  # Skip non-timestamp directories
+
+print(f"Found {len(all_files)} matching files in subdirectories within range {start_timestamp} - {end_timestamp}.")
+
+# print(f"Found {len(all_files)} files. Extracting PSD data...")
 
 # Define Schumann harmonics count (7 based on the function)
 num_schumann_bands = 7
 
-for file in all_files:
+from tqdm import tqdm
+
+# # Process files with a progress bar
+# for file in tqdm(all_files, desc="Processing PSD Files", unit="file"):
+# # for file in all_files:
+#     data = extract_psd_data(file)
+#     if data:
+#         freqs = np.linspace(3, 48, len(data["psd_ns"]))  # Assuming 900 bins
+
+#         # Extract features for both NS and EW components
+#         features_ns = extract_spectral_features(data["timestamp"], data["psd_ns"], freqs)
+#         features_ew = extract_spectral_features(data["timestamp"], data["psd_ew"], freqs)
+
+#         all_data.append({
+#             "timestamp": data["timestamp"],
+#             "psd_ns": data["psd_ns"],
+#             "psd_ew": data["psd_ew"],
+
+#             # NS Features
+#             "entropy_ns": features_ns[0], "centroid_ns": features_ns[1], "bandwidth_ns": features_ns[2],
+#             "flatness_ns": features_ns[3], "skewness_ns": features_ns[4], "kurtosis_ns": features_ns[5],
+#             "peak_freq_ns": features_ns[6], "peak_amp_ns": features_ns[7],
+#             "low_freq_ns": features_ns[8],  # New: Low-frequency anomaly power for NS
+
+#             # Add Schumann harmonics power bands for NS
+#             **{f"schumann_{i + 1}_ns": features_ns[9 + i] for i in range(num_schumann_bands)},
+
+#             # EW Features
+#             "entropy_ew": features_ew[0], "centroid_ew": features_ew[1], "bandwidth_ew": features_ew[2],
+#             "flatness_ew": features_ew[3], "skewness_ew": features_ew[4], "kurtosis_ew": features_ew[5],
+#             "peak_freq_ew": features_ew[6], "peak_amp_ew": features_ew[7],
+#             "low_freq_ew": features_ew[8],  # New: Low-frequency anomaly power for EW
+
+#             # Add Schumann harmonics power bands for EW
+#             **{f"schumann_{i + 1}_ew": features_ew[9 + i] for i in range(num_schumann_bands)}
+#         })
+
+#         # entropy_ns, centroid_ns, bandwidth_ns = extract_spectral_features(data["psd_ns"], freqs)
+#         # entropy_ew, centroid_ew, bandwidth_ew = extract_spectral_features(data["psd_ew"], freqs)
+#         #
+#         # all_data.append({
+#         #     "timestamp": data["timestamp"],
+#         #     "psd_ns": data["psd_ns"],
+#         #     "psd_ew": data["psd_ew"],
+#         #     "entropy_ns": entropy_ns,
+#         #     "centroid_ns": centroid_ns,
+#         #     "bandwidth_ns": bandwidth_ns,
+#         #     "entropy_ew": entropy_ew,
+#         #     "centroid_ew": centroid_ew,
+#         #     "bandwidth_ew": bandwidth_ew,
+#         # })
+
+# df = pd.DataFrame(all_data)
+# df_ns = pd.DataFrame(df["psd_ns"].to_list())
+# df_ew = pd.DataFrame(df["psd_ew"].to_list())
+
+# # Add all shape-based features to df_ns and df_ew
+# shape_features_ns = ["entropy_ns", "centroid_ns", "bandwidth_ns", "flatness_ns",
+#                      "skewness_ns", "kurtosis_ns", "peak_freq_ns", "peak_amp_ns",
+#                      "low_freq_ns"]  # Include low-frequency anomaly power
+
+# # Dynamically add Schumann harmonics power bands
+# shape_features_ns += [f"schumann_{i + 1}_ns" for i in range(num_schumann_bands)]
+
+# shape_features_ew = ["entropy_ew", "centroid_ew", "bandwidth_ew", "flatness_ew",
+#                      "skewness_ew", "kurtosis_ew", "peak_freq_ew", "peak_amp_ew",
+#                      "low_freq_ew"]  # Include low-frequency anomaly power
+
+# # Dynamically add Schumann harmonics power bands
+# shape_features_ew += [f"schumann_{i + 1}_ew" for i in range(num_schumann_bands)]
+
+# for feature in shape_features_ns:
+#     df_ns[feature] = df[feature]
+# for feature in shape_features_ew:
+#     df_ew[feature] = df[feature]
+
+# df_ns.insert(0, "timestamp", df["timestamp"])
+# df_ew.insert(0, "timestamp", df["timestamp"])
+
+# # Merge everything into df_expanded, so both raw PSD bins & extracted features are included
+# df_expanded = df_ns.merge(df_ew, on="timestamp", suffixes=("_ns", "_ew"))
+
+# # Check for NaNs before PCA
+# nan_counts = df_expanded.isna().sum()
+# if nan_counts.any() > 0:
+#     print("🔍 NaN Counts Per Column:")
+#     print(nan_counts[nan_counts > 0])
+#     # Identify rows with NaNs
+#     nan_rows = df_expanded[df_expanded.isna().any(axis=1)]
+#     print("\n🕒 Timestamps of Rows with NaNs and Their Missing Features:")
+#     for index, row in nan_rows.iterrows():
+#         nan_columns = row[row.isna()].index.to_list()  # Get column names with NaNs
+#         print(f"📌 Timestamp: {row['timestamp']} | Missing Columns: {nan_columns}")
+
+#     # Print the total count of NaN rows
+#     print(f"\n⚠️ Total rows with NaNs: {len(nan_rows)}\n")
+
+# # Select only numeric columns to replace NaNs
+# numeric_cols = df_expanded.select_dtypes(include=[np.number]).columns
+
+# # If there are NaNs, replace them with the column mean (only for numeric columns)
+# if nan_counts.sum() > 0:
+#     print("⚠️ Warning: Found missing values. Replacing NaNs with column mean.")
+#     df_expanded[numeric_cols] = df_expanded[numeric_cols].fillna(df_expanded[numeric_cols].mean())
+
+all_data = []
+
+print(f"Found {len(all_files)} files. Extracting PSD data...")
+for file in tqdm(all_files, desc="Processing PSD Files", unit="file"):
     data = extract_psd_data(file)
     if data:
-        freqs = np.linspace(3, 48, len(data["psd_ns"]))  # Assuming 900 bins
+        all_data.append(data)
 
-        # Extract features for both NS and EW components
-        features_ns = extract_spectral_features(data["timestamp"], data["psd_ns"], freqs)
-        features_ew = extract_spectral_features(data["timestamp"], data["psd_ew"], freqs)
-
-        all_data.append({
-            "timestamp": data["timestamp"],
-            "psd_ns": data["psd_ns"],
-            "psd_ew": data["psd_ew"],
-
-            # NS Features
-            "entropy_ns": features_ns[0], "centroid_ns": features_ns[1], "bandwidth_ns": features_ns[2],
-            "flatness_ns": features_ns[3], "skewness_ns": features_ns[4], "kurtosis_ns": features_ns[5],
-            "peak_freq_ns": features_ns[6], "peak_amp_ns": features_ns[7],
-            "low_freq_ns": features_ns[8],  # New: Low-frequency anomaly power for NS
-
-            # Add Schumann harmonics power bands for NS
-            **{f"schumann_{i + 1}_ns": features_ns[9 + i] for i in range(num_schumann_bands)},
-
-            # EW Features
-            "entropy_ew": features_ew[0], "centroid_ew": features_ew[1], "bandwidth_ew": features_ew[2],
-            "flatness_ew": features_ew[3], "skewness_ew": features_ew[4], "kurtosis_ew": features_ew[5],
-            "peak_freq_ew": features_ew[6], "peak_amp_ew": features_ew[7],
-            "low_freq_ew": features_ew[8],  # New: Low-frequency anomaly power for EW
-
-            # Add Schumann harmonics power bands for EW
-            **{f"schumann_{i + 1}_ew": features_ew[9 + i] for i in range(num_schumann_bands)}
-        })
-
-        # entropy_ns, centroid_ns, bandwidth_ns = extract_spectral_features(data["psd_ns"], freqs)
-        # entropy_ew, centroid_ew, bandwidth_ew = extract_spectral_features(data["psd_ew"], freqs)
-        #
-        # all_data.append({
-        #     "timestamp": data["timestamp"],
-        #     "psd_ns": data["psd_ns"],
-        #     "psd_ew": data["psd_ew"],
-        #     "entropy_ns": entropy_ns,
-        #     "centroid_ns": centroid_ns,
-        #     "bandwidth_ns": bandwidth_ns,
-        #     "entropy_ew": entropy_ew,
-        #     "centroid_ew": centroid_ew,
-        #     "bandwidth_ew": bandwidth_ew,
-        # })
-
+# Convert to DataFrame
 df = pd.DataFrame(all_data)
+
+# Expand PSD values into separate columns for NS and EW
 df_ns = pd.DataFrame(df["psd_ns"].to_list())
 df_ew = pd.DataFrame(df["psd_ew"].to_list())
-
-# Add all shape-based features to df_ns and df_ew
-shape_features_ns = ["entropy_ns", "centroid_ns", "bandwidth_ns", "flatness_ns",
-                     "skewness_ns", "kurtosis_ns", "peak_freq_ns", "peak_amp_ns",
-                     "low_freq_ns"]  # Include low-frequency anomaly power
-
-# Dynamically add Schumann harmonics power bands
-shape_features_ns += [f"schumann_{i + 1}_ns" for i in range(num_schumann_bands)]
-
-shape_features_ew = ["entropy_ew", "centroid_ew", "bandwidth_ew", "flatness_ew",
-                     "skewness_ew", "kurtosis_ew", "peak_freq_ew", "peak_amp_ew",
-                     "low_freq_ew"]  # Include low-frequency anomaly power
-
-# Dynamically add Schumann harmonics power bands
-shape_features_ew += [f"schumann_{i + 1}_ew" for i in range(num_schumann_bands)]
-
-for feature in shape_features_ns:
-    df_ns[feature] = df[feature]
-for feature in shape_features_ew:
-    df_ew[feature] = df[feature]
 
 df_ns.insert(0, "timestamp", df["timestamp"])
 df_ew.insert(0, "timestamp", df["timestamp"])
 
-# Merge everything into df_expanded, so both raw PSD bins & extracted features are included
 df_expanded = df_ns.merge(df_ew, on="timestamp", suffixes=("_ns", "_ew"))
-
-# Check for NaNs before PCA
-nan_counts = df_expanded.isna().sum()
-if nan_counts.any() > 0:
-    print("🔍 NaN Counts Per Column:")
-    print(nan_counts[nan_counts > 0])
-    # Identify rows with NaNs
-    nan_rows = df_expanded[df_expanded.isna().any(axis=1)]
-    print("\n🕒 Timestamps of Rows with NaNs and Their Missing Features:")
-    for index, row in nan_rows.iterrows():
-        nan_columns = row[row.isna()].index.to_list()  # Get column names with NaNs
-        print(f"📌 Timestamp: {row['timestamp']} | Missing Columns: {nan_columns}")
-
-    # Print the total count of NaN rows
-    print(f"\n⚠️ Total rows with NaNs: {len(nan_rows)}\n")
-
-# Select only numeric columns to replace NaNs
-numeric_cols = df_expanded.select_dtypes(include=[np.number]).columns
-
-# If there are NaNs, replace them with the column mean (only for numeric columns)
-if nan_counts.sum() > 0:
-    print("⚠️ Warning: Found missing values. Replacing NaNs with column mean.")
-    df_expanded[numeric_cols] = df_expanded[numeric_cols].fillna(df_expanded[numeric_cols].mean())
-
-# all_data = []
-#
-# print(f"Found {len(all_files)} files. Extracting PSD data...")
-# for file in all_files:
-#     data = extract_psd_data(file)
-#     if data:
-#         all_data.append(data)
-#
-# # Convert to DataFrame
-# df = pd.DataFrame(all_data)
-#
-# # Expand PSD values into separate columns for NS and EW
-# df_ns = pd.DataFrame(df["psd_ns"].to_list())
-# df_ew = pd.DataFrame(df["psd_ew"].to_list())
-#
-# df_ns.insert(0, "timestamp", df["timestamp"])
-# df_ew.insert(0, "timestamp", df["timestamp"])
-#
-# df_expanded = df_ns.merge(df_ew, on="timestamp", suffixes=("_ns", "_ew"))
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -539,6 +569,29 @@ if not small_clusters.empty:
         for ts in timestamps:
             print(f" - {ts}")
 
+df_pca["date"] = df_pca["timestamp"].astype(str).str[:8]
+df_cluster_date_counts = df_pca.groupby(["date", "gmm_cluster"]).size().unstack(fill_value=0)
+df_cluster_probabilities = df_cluster_date_counts.div(df_cluster_date_counts.sum(axis=1), axis=0).round(3)
+df_cluster_analysis = pd.concat([df_cluster_date_counts, df_cluster_probabilities.add_suffix("_prob")], axis=1)
+prob_columns = sorted([str(col) for col in df_cluster_analysis.columns if str(col).endswith("_prob")])
+df_cluster_analysis = df_cluster_analysis.sort_values(by=prob_columns, ascending=False)
+df_cluster_analysis.to_csv("cluster_date_counts.csv")
+print("✅ Cluster analysis with probabilities saved as 'cluster_date_counts.csv'.")
+
+# Ensure timestamps are in datetime format and sort the data
+df_pca["timestamp"] = pd.to_datetime(df_pca["timestamp"])
+df_pca = df_pca.sort_values("timestamp")
+plt.figure(figsize=(14, 6))
+plt.plot(df_pca["timestamp"], df_pca["gmm_cluster"], marker='o', linestyle='-', markersize=4, alpha=0.7)
+plt.xlabel("Timestamp")
+plt.ylabel("Cluster ID")
+plt.title("Cluster Transitions Over Time")
+plt.xticks(rotation=45)
+plt.grid()
+plt.show()
+
+df_pca["timestamp"] = df_pca["timestamp"].dt.strftime('%Y%m%d%H%M')
+
 if PLOT:
     import numpy as np
     import pandas as pd
@@ -596,7 +649,7 @@ if PLOT:
         plt.legend()
         canvas.draw()  # Update the Tkinter-embedded Matplotlib figure
         print(f"🔹 Highlighted timestamp: {timestamp}, Cluster: {cluster}")
-        file_path = f"/home/vag/Documents/POLSKI_SAMPLES/{timestamp[:8]}/{timestamp}.pol"
+        file_path = f"{DATA_DIR}/{timestamp[:8]}/{timestamp}.pol"
         subprocess.run(["python3", "py/signal_to_psd.py", "--file-path", file_path, "--no-fit"])
 
     def on_click(event):

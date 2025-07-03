@@ -131,7 +131,7 @@ if __name__ == "__main__":
 
     try:   
         print(f"{YELLOW}Running signal_to_psd...{NC}")
-        cmd = ["python3", "./py/signal_to_psd.py", "--file-type", mode, "-d", output_dir, "-l", py_log_file_path]
+        cmd = ["python3", "./py/signal_to_psd.py", "--file-type", mode, "-d", output_dir, "-l", py_log_file_path, "--no-fit"]
         with open(py_log_file_path, "w") as py_log_file:
             py_log_file.write(f"Python Log started on: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")} with cmd: {cmd}\n")
         # subprocess.run(cmd, check=True)

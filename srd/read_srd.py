@@ -968,7 +968,6 @@ def sr_fit(f, p_in, modes):
 
     return fitline, noiseline, results, None  # gof (goodness of fit) is not implemented
 
-
 def srd_spec(t, fs, x, y):
     Frange = [3,48]
 
@@ -1006,7 +1005,6 @@ def srd_spec(t, fs, x, y):
 
     return F, Pxx, Pyy, L1, L2, R1, R2, gof1, gof2
 
-
 def print_srd_data(fn):
     """
     Prints the extracted SRD data in a meaningful way.
@@ -1042,7 +1040,7 @@ def print_srd_data(fn):
     # plot_signal(HNS_downsampled, [], decimated_frequency, t)
     # def plot_signal(HNS, HEW, frequency, date):
 
-    t = np.linspace(0, len(HNS_downsampled) / decimated_frequency, len(HNS_downsampled))
+    time_array = np.linspace(0, len(HNS_downsampled) / decimated_frequency, len(HNS_downsampled))
 
     # Create a single figure with two subplots
     fig, axes = plt.subplots(2, 1, figsize=(10, 10))
@@ -1050,9 +1048,9 @@ def print_srd_data(fn):
 
     # First subplot: Time series plot
     axes[0].set_title("Time Series")
-    axes[0].plot(t, HNS_downsampled, 'r', lw=1, label=r'$B_{NS}$')
+    axes[0].plot(time_array, HNS_downsampled, 'r', lw=1, label=r'$B_{NS}$')
     if len(HEW_downsampled) > 0:
-        axes[0].plot(t, HEW_downsampled, 'b', lw=1, label=r'$B_{EW}$')
+        axes[0].plot(time_array, HEW_downsampled, 'b', lw=1, label=r'$B_{EW}$')
     axes[0].set_ylabel("B [V]")
     axes[0].set_xlabel("Time [sec]")
     axes[0].set_xlim([0, 600])
@@ -1097,7 +1095,7 @@ def print_srd_data(fn):
 
     # Print the extracted information in a meaningful way
     print(f"File: {fn}")
-    print(f"Timestamp: {datetime.fromtimestamp(t)}")
+    print(f"Timestamp: {datetime.fromtimestamp(date)}")
     print(f"Sampling Frequency (fs): {fs} Hz")
     print(f"Channel Count: {'Single (x)' if len(y) == 0 else 'Dual (x and y)'}")
     print(f"First 10 Samples (Channel x): {x[:10]}")
@@ -1130,5 +1128,6 @@ def select_and_print_srd_data():
     else:
         print("No file selected.")
 
-# Run the file selection and data print function
-select_and_print_srd_data()
+if __name__ == "__main__":
+    # Run the file selection and data print function
+    select_and_print_srd_data()

@@ -1432,7 +1432,7 @@ def transform_signal(input_filename, file_extension, do_plot=False, do_not_fit=F
         error_files.append(input_filename)
 
 
-def process_files_in_directory():
+def process_files_in_directory(do_fit=False):
     global na_fits_num
 
     # Pre-index all `.zst` files for fast lookup
@@ -1486,7 +1486,7 @@ def process_files_in_directory():
         #     ncols=150  
         # )
         for input_filename in file_list:
-            transform_signal(input_filename, FILE_TYPE, do_plot=False)
+            transform_signal(input_filename, FILE_TYPE, do_plot=False) #, do_not_fit = not do_fit
             # file_pbar.update(1)  # Update file progress bar
         # file_pbar.close()  # Close the inner progress bar once done
 
