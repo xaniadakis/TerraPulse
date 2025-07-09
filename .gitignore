@@ -7,3 +7,5 @@
 
 # Exception for earthquakes_db/output
 !earthquakes_db/output/
+/iono/swarm_data/
+/sharepoint_api/.env
