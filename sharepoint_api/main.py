@@ -2,6 +2,7 @@ import os
 import requests
 from dotenv import load_dotenv
 from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor
 
 load_dotenv()
 
@@ -42,7 +43,7 @@ def create_folder(drive_id, parent_id, folder_name, token):
 
     for child in children:
         if child["name"] == folder_name and "folder" in child:
-            print(f"📁 Folder exists: {folder_name}")
+            tqdm.write(f"📁 Folder exists: {folder_name}")
             return child["id"]  # Reuse existing folder
 
     # Folder doesn't exist, create it
@@ -101,12 +102,47 @@ def upload_file_conditional(drive_id, parent_id, file_path, file_name, token):
                 pbar.update(len(chunk))
                 start += len(chunk)
 
-from tqdm import tqdm
+def validate_item(args):
+    item_type, rel_path, drive_id, token, remote_parent_id = args
+    path_parts = rel_path.split(os.sep) if rel_path != "." else []
+    parent_parts = path_parts[:-1]
+    item_name = path_parts[-1]
+    current_id = remote_parent_id
+
+    # Navigate to parent folder
+    for part in parent_parts:
+        url = f"https://graph.microsoft.com/v1.0/drives/{drive_id}/items/{current_id}/children"
+        headers = {"Authorization": f"Bearer {token}"}
+        resp = requests.get(url, headers=headers)
+        resp.raise_for_status()
+        children = resp.json().get("value", [])
+        match = next((item for item in children if item["name"] == part and "folder" in item), None)
+        if not match:
+            return f"Missing folder: {os.path.join(*parent_parts)}"
+        current_id = match["id"]
+
+    if current_id is None:
+        return f"Missing path: {rel_path}"
+
+    url = f"https://graph.microsoft.com/v1.0/drives/{drive_id}/items/{current_id}/children"
+    headers = {"Authorization": f"Bearer {token}"}
+    resp = requests.get(url, headers=headers)
+    resp.raise_for_status()
+    children = resp.json().get("value", [])
+
+    if item_type == "folder":
+        found = any(child["name"] == item_name and "folder" in child for child in children)
+        if not found:
+            return f"Missing folder: {rel_path}"
+    else:
+        found = any(child["name"] == item_name and "file" in child for child in children)
+        if not found:
+            return f"Missing file: {rel_path}"
+    return None
 
 def validate_upload(drive_id, token, local_path, remote_parent_id="root"):
     print("🔍 Validating upload...")
 
-    # Pre-count all files and folders
     local_items = []
     for root, dirs, files in os.walk(local_path):
         rel_path = os.path.relpath(root, local_path)
@@ -115,78 +151,93 @@ def validate_upload(drive_id, token, local_path, remote_parent_id="root"):
         for f in files:
             local_items.append(("file", os.path.normpath(os.path.join(rel_path, f))))
 
-    mismatches = []
+    args_list = [(item_type, rel_path, drive_id, token, remote_parent_id) for item_type, rel_path in local_items]
 
-    for item_type, rel_path in tqdm(local_items, desc="Validating items"):
-        path_parts = rel_path.split(os.sep) if rel_path != "." else []
-        parent_parts = path_parts[:-1]
-        item_name = path_parts[-1]
-        current_id = remote_parent_id
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        results = list(tqdm(executor.map(validate_item, args_list), total=len(args_list), desc="Validating items"))
 
-        # Navigate to parent folder
-        for part in parent_parts:
-            url = f"https://graph.microsoft.com/v1.0/drives/{drive_id}/items/{current_id}/children"
-            headers = {"Authorization": f"Bearer {token}"}
-            resp = requests.get(url, headers=headers)
-            resp.raise_for_status()
-            children = resp.json().get("value", [])
-            match = next((item for item in children if item["name"] == part and "folder" in item), None)
-            if not match:
-                mismatches.append(f"Missing folder: {os.path.join(*parent_parts)}")
-                current_id = None
-                break
-            current_id = match["id"]
-
-        if current_id is None:
-            continue
-
-        # Check if item exists
-        url = f"https://graph.microsoft.com/v1.0/drives/{drive_id}/items/{current_id}/children"
-        headers = {"Authorization": f"Bearer {token}"}
-        resp = requests.get(url, headers=headers)
-        resp.raise_for_status()
-        children = resp.json().get("value", [])
-
-        if item_type == "folder":
-            found = any(child["name"] == item_name and "folder" in child for child in children)
-            if not found:
-                mismatches.append(f"Missing folder: {rel_path}")
-        else:
-            found = any(child["name"] == item_name and "file" in child for child in children)
-            if not found:
-                mismatches.append(f"Missing file: {rel_path}")
-
+    mismatches = [r for r in results if r]
     if mismatches:
         print("❌ Validation failed. Missing items:")
-        for item in mismatches:
-            print("-", item)
+        for m in mismatches:
+            print("-", m)
     else:
         print("✅ Validation successful. All files and folders are present.")
 
+def load_ignore_lists(ignore_file=".uploadignore"):
+    ignored_dirs = set()
+    ignored_files = set()
+    if os.path.exists(ignore_file):
+        with open(ignore_file, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip().strip("\ufeff")
+                if not line or line.startswith("#"):
+                    continue
+
+                # Use path relative to LOCAL_DIR if possible
+                local_path = os.path.join(LOCAL_DIR, line)
+                if os.path.isdir(local_path):
+                    ignored_dirs.add(line)
+                elif os.path.isfile(local_path):
+                    ignored_files.add(line)
+                else:
+                    # Default: assume it's a dir if not present
+                    ignored_dirs.add(line)
+    return ignored_dirs, ignored_files
+
 def sync_directory(local_path, parent_id, drive_id, token):
+    ignored_dirs, ignored_files = load_ignore_lists()
+    print("🔽 Ignoring dirs:", ignored_dirs)
+    print("🔽 Ignoring files:", ignored_files)
     all_files = []
-    for root, _, files in os.walk(local_path):
+    folder_map = {}
+
+    # Collect eligible files
+    for root, dirs, files in os.walk(local_path):
+        dirs[:] = [d for d in dirs if d not in ignored_dirs]
+
+        rel_path = os.path.relpath(root, local_path)
+        folder_map[root] = rel_path.split(os.sep) if rel_path != '.' else []
+
         for f in files:
-            all_files.append(os.path.join(root, f))
+            if f in ignored_files:
+                continue
+            all_files.append((root, f))
 
+    # Print directories that will be uploaded (not ignored)
+    top_level_dirs = []
+    for d in os.listdir(local_path):
+        full_path = os.path.join(local_path, d)
+        if not os.path.isdir(full_path):
+            continue
+        d_clean = d.strip().strip("\ufeff")
+        if d_clean in ignored_dirs:
+            continue
+        top_level_dirs.append(d)
+
+    # Upload
     with tqdm(total=len(all_files), desc="Uploading files") as file_bar:
-        for root, dirs, files in os.walk(local_path):
-            rel_path = os.path.relpath(root, local_path)
-            cloud_path_parts = rel_path.split(os.sep) if rel_path != '.' else []
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = []
+            for root, file_name in all_files:
+                cloud_path_parts = folder_map[root]
+                current_parent_id = parent_id
 
-            current_parent_id = parent_id
+                for part in cloud_path_parts:
+                    if part not in folder_cache.get(current_parent_id, {}):
+                        new_folder_id = create_folder(drive_id, current_parent_id, part, token)
+                        folder_cache.setdefault(current_parent_id, {})[part] = new_folder_id
+                    current_parent_id = folder_cache[current_parent_id][part]
 
-            for part in cloud_path_parts:
-                if part not in folder_cache.get(current_parent_id, {}):
-                    new_folder_id = create_folder(drive_id, current_parent_id, part, token)
-                    folder_cache.setdefault(current_parent_id, {})[part] = new_folder_id
-                current_parent_id = folder_cache[current_parent_id][part]
-
-            for file_name in files:
                 file_path = os.path.join(root, file_name)
-                upload_file_conditional(drive_id, current_parent_id, file_path, file_name, token)
-                file_bar.update(1)
+                futures.append(executor.submit(upload_and_tick, drive_id, current_parent_id, file_path, file_name, token, file_bar))
 
+            for f in futures:
+                f.result()
+
+def upload_and_tick(drive_id, parent_id, file_path, file_name, token, file_bar):
+    upload_file_conditional(drive_id, parent_id, file_path, file_name, token)
+    file_bar.update(1)
 
 if __name__ == "__main__":
     print("Fetching token...")
@@ -200,4 +251,3 @@ if __name__ == "__main__":
     sync_directory(LOCAL_DIR, "root", drive_id, token)
     print("✅ Done Uploading, shall now validate...")
     validate_upload(drive_id, token, LOCAL_DIR)
-
